@@ -7,6 +7,7 @@ all: client server
 
 clean:
 	rm -f server client *.o chat.db 
+	rm -rf test-tmp
 
 ui.o: ui.c ui.h
 
