@@ -155,4 +155,7 @@ int set_user_status(sqlite3 *db, char *username, int status){
     if (db) sqlite3_close(db);
     return r;
 }
+
+
+
 #endif //SECCHAT_DB_STUFF_H

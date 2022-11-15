@@ -332,6 +332,7 @@ static int server_state_init(struct server_state *state, sqlite3 *db)
     if (res_create != 0)
     {
         fprintf(stderr, "Unable to create headers for database. Error: %s \n", sqlite3_errmsg(db));
+        return -1;
     }
   res_create = sqlite3_exec(db,"CREATE TABLE IF NOT EXISTS users(username TEXT NOT NULL UNIQUE, salt text NOT NULL, hash text NOT NULL, status integer, PRIMARY KEY (username))",NULL,NULL,NULL);
 
@@ -340,6 +341,7 @@ static int server_state_init(struct server_state *state, sqlite3 *db)
   if (res_create != 0)
   {
     fprintf(stderr, "Unable to create headers for database. Error: %s \n", sqlite3_errmsg(db));
+    return -1;
   }
  // res_create = sqlite3_exec(db,"CREATE TABLE IF NOT EXISTS msg(id INTEGER PRIMARY KEY, msg_type	text NOT NULL,msg_len INTEGER NOT NULL, sender TEXT NOT NULL  , receiver TEXT, timestamp INTEGER NOT NULL, msg BLOB NOT NULL, FOREIGN KEY (sender)  REFERENCES users(username))",NULL,NULL,NULL);
    // if (res_create != 0)
@@ -347,6 +349,13 @@ static int server_state_init(struct server_state *state, sqlite3 *db)
    //     fprintf(stderr, "Unable to create headers for database2. Error: %s \n", sqlite3_errmsg(db));
    // }
     sqlite3_busy_timeout( state->db, 2000 );
+
+  //reset online status (if server was terminated while users where connected)
+    if(sqlite3_exec(db, "UPDATE users SET status = 0", NULL, NULL, NULL)){
+        fprintf(stderr, "Unable to set user status to 0. Error: %s \n", sqlite3_errmsg(db));
+        return -1;
+    }
+
   return 0;
 }
 
@@ -455,8 +464,11 @@ int main(int argc, char **argv)
     return 1;
   }
 
+
   /* preparations */
-  server_state_init(&state, db);
+  if(server_state_init(&state, db) != 0)
+      return 1;
+
   register_signals();
 
   /* start listening for connections */
