@@ -1,4 +1,0 @@
-server: handle_s2w_closed
-info: child exited
-server: handle_s2w_closed
-info: child exited
