@@ -1,0 +1,4 @@
+TODO: username exists, check if password is correct
+username: erik
+password: hunter2
+hardcoded salt: 0123445kjadafs

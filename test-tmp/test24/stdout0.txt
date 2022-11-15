@@ -1,0 +1,12 @@
+TODO: username exists, check if password is correct
+username: manuel
+password: alsofun
+hardcoded salt: 0123445kjadafs
+TODO: username exists, check if password is correct
+username: erik
+password: hunter2
+hardcoded salt: 0123445kjadafs
+TODO: username exists, check if password is correct
+username: user2
+password: iloveyou
+hardcoded salt: 0123445kjadafs

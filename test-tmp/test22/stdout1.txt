@@ -1,0 +1,6 @@
+authentication succeeded
+2022-11-14 20:34:34 erik: pubmsg1
+2022-11-14 20:34:47 erik: pubmsg2
+2022-11-14 20:34:55 erik: @user2 this is privmsg1
+2022-11-14 20:35:14 user2: @erik this is privmsg2
+erik

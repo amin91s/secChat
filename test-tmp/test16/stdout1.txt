@@ -1,0 +1,2 @@
+authentication succeeded
+2022-11-14 20:34:34 erik: pubmsg1
