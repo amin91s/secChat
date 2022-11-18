@@ -20,9 +20,9 @@ struct worker_state
   int server_eof;
   sqlite3 *db;
   //TODO: move these to api_state?
-  int lastReadId; //keeps track of which messages need ot be broadcasted to client
+  //int lastReadId; //keeps track of which messages need ot be broadcasted to client
+  char lastReadTime[20];
   char username[MAX_USR_LENGTH+1];
-  int lastInserted;
   int logged;
 
 };
@@ -49,20 +49,26 @@ static int handle_s2w_notification(struct worker_state *state)
   }
 
   // create sql query to select all unread msgs
-  char sql[] = "SELECT * FROM msg WHERE (msg_type=2) OR (msg_type=1 AND (receiver = ?1 OR sender= ?2))  group by id having id > ?3";
+  //char sql[] = "SELECT * FROM msg WHERE (msg_type=2) OR (msg_type=1 AND (receiver = ?1 OR sender= ?2))  group by id having id > ?3";
+
+    char sql[] = "SELECT * FROM msg WHERE (msg_type=2) OR (msg_type=1 AND (receiver = ?1 OR sender= ?2))  group by id having timestamp > ?3";
 
   if (sqlite3_prepare_v2(state->db, sql, -1, &stmt, NULL) == SQLITE_OK)
   {
       if((r = sqlite3_bind_text(stmt, 1,state->username, -1, SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
       if((r = sqlite3_bind_text(stmt, 2,state->username, -1, SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
-      if((r = sqlite3_bind_int(stmt, 3, state->lastReadId)) != SQLITE_OK) goto cleanup;
+      //if((r = sqlite3_bind_int(stmt, 3, state->lastReadId)) != SQLITE_OK) goto cleanup;
+      if((r = sqlite3_bind_text(stmt, 3, state->lastReadTime,-1,SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
 
       while (sqlite3_step(stmt) == SQLITE_ROW)
     {
-      state->lastReadId = sqlite3_column_int(stmt, 0);
-
+      //state->lastReadId = sqlite3_column_int(stmt, 0);
       tPtr = (char *)sqlite3_column_text(stmt, 1);
       strncpy(temp.time, tPtr, 20);
+
+      strncpy(state->lastReadTime,temp.time, 20);
+      //printf("lastReadTime: %s\n",state->lastReadTime);
+
       msgPtr = (char *)sqlite3_column_text(stmt, 2);
       temp.type = sqlite3_column_int(stmt, 5);
       if(temp.type == CMD_PUBLIC_MSG){
@@ -461,8 +467,8 @@ static int worker_state_init(
 
   /* TODO any additional worker state initialization */
   state->db = db;
-  state->lastReadId = 0;
-  state->lastInserted = 0;
+  //state->lastReadId = 0;
+  memset(state->lastReadTime,0,20);
   return 0;
 }
 

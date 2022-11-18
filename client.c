@@ -180,6 +180,8 @@ static int client_process_command(struct client_state *state)
 
 
               //TODO: do the crypto stuff here
+              //TODO: is it safe/necessary to store password after logging in?? (ask)
+
               //printf("username: %s\n",state->ui.username);
               //printf("password: %s\n",state->ui.password);
               strncpy(msg.auth.username,state->ui.username,MAX_USR_LENGTH);
@@ -278,6 +280,7 @@ static int client_process_command(struct client_state *state)
             return 0;
           }
         }
+        //TODO: is this vulnerable????
       unknown:
       default:
         printf("error: unknown command %s",temp);
@@ -319,6 +322,9 @@ static int execute_request(
   {
     //const struct public_msg *temp =  &msg->publicMsg;
     //printf("%s %s: %s", msg->time, temp->sender, temp->message);
+
+    //TODO: verify the signature here?? is it needed if server is verified?
+
     printf("%s %s: %s", msg->time, msg->publicMsg.sender, msg->publicMsg.message);
   } else if(msg->type == CMD_PRIVATE_MSG){
       printf("%s %s: @%s %s", msg->time, msg->privateMsg.sender,msg->privateMsg.receiver, msg->privateMsg.message);
