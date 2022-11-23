@@ -16,6 +16,7 @@
 #include <openssl/ssl.h>
 
 #include "ssl-nonblock.h"
+#include "crypto.h"
 
 struct worker_state
 {
@@ -234,9 +235,14 @@ static int execute_request(
                 //the username. just check the returned value of the query
 
                 //call functions to generate salt and hash the password
-                // hardcoded for testing
-                //char hash[] = "2e99758548972a8e8822ad47fa1017ff72f06f3ff6a016851f45c398732bc50c";
-                char salt[] = "0123445kjadafs";
+                unsigned char *salt = calloc(SALT_LENGTH,sizeof (unsigned char ));
+                if(generate_salt(salt) == 1-){
+                    exit(-1);
+                    //todo: fix
+                }
+                printf("salt: %s\n",salt);
+
+
 
                 //store salt and hash
                 //int res = register_user(state->db,(char*)msg->auth.username,hash,salt);

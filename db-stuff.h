@@ -8,7 +8,7 @@
 
 
 
-int register_user(sqlite3 *db, char *username, char *hash, char *salt){
+int register_user(sqlite3 *db, char *username, char *hash, unsigned char *salt){
     int r = SQLITE_OK;
     sqlite3_stmt *stmt = NULL;
     sqlite3_open("chat.db", &db);
