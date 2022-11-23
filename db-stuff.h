@@ -22,7 +22,7 @@ int register_user(sqlite3 *db, char *username, char *hash, unsigned char *salt){
     char *sql = "insert into users (username, salt, hash) values (@username, @salt, @hash);";
     if((r = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL)) != SQLITE_OK) goto cleanup;
     if((r = sqlite3_bind_text(stmt, 1,username ,-1 , SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
-    if((r = sqlite3_bind_text(stmt, 2,salt ,-1 , SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
+    if((r = sqlite3_bind_text(stmt, 2,(char*)salt ,-1 , SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
     if((r = sqlite3_bind_text(stmt, 3,hash ,-1 , SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
 
     r = sqlite3_step(stmt);

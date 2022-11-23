@@ -236,7 +236,7 @@ static int execute_request(
 
                 //call functions to generate salt and hash the password
                 unsigned char *salt = calloc(SALT_LENGTH,sizeof (unsigned char ));
-                if(generate_salt(salt) == 1-){
+                if(generate_salt(salt) == 1){
                     exit(-1);
                     //todo: fix
                 }

@@ -19,6 +19,8 @@ server.o: server.c util.h
 
 util.o: util.c util.h
 
+crypto.o: crypto.c crypto.h
+
 worker.o: worker.c util.h worker.h
 
 client: client.o api.o ui.o util.o ssl-nonblock.o
