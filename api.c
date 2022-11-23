@@ -9,6 +9,8 @@
 
 #include "api.h"
 
+
+
 /**
  * @brief         Receive the next message from the sender and stored in @msg
  * @param state   Initialized API state
@@ -16,20 +18,28 @@
  * @return        Returns 1 on new message, 0 in case socket was closed,
  *                or -1 in case of error.
  */
-int api_recv(struct api_state *state, struct api_msg *msg)
+int api_recv(struct api_state *state, struct api_msg *msg, SSL *ssl)
 {
 
   assert(state);
   assert(msg);
+  assert(ssl);
 
-  size_t ret = read(state->fd, msg, sizeof(struct api_msg));
+  //size_t ret = read(state->fd, msg, sizeof(struct api_msg));
+
+  ssize_t ret = ssl_block_read(ssl,state->fd,msg,sizeof(struct api_msg));
+  printf("api_recv: %zd\n",ret);
   return ret > 0 ? 1 : ret;
 }
 
-int api_send(int fd, struct api_msg *msg)
+//todo: check if size is needed after adding encryption
+int api_send(int fd, struct api_msg *msg, SSL *ssl)
 {
   assert(msg);
-  size_t ret = send(fd, msg, sizeof(*msg), 0);
+  assert(ssl);
+  //size_t ret = send(fd, msg, sizeof(*msg), 0);
+  size_t ret = ssl_block_write(ssl,fd,msg,sizeof(*msg));
+  printf("api_send: %zu\n",ret);
   return ret > 0 ? 0 : -1;
 }
 
@@ -88,7 +98,7 @@ void set_time(char *temp)
     strftime(temp, 20, "%Y-%m-%d %H:%M:%S", info);
 }
 
-int send_response(int fd,enum response r,char *text){
+int send_response(int fd,enum response r,char *text, SSL *ssl){
     struct api_msg msg;
     msg.type=SERVER_RESPONSE;
     set_time(msg.time);
@@ -96,6 +106,6 @@ int send_response(int fd,enum response r,char *text){
     if(text != NULL){
         strncpy(msg.serverResponse.message,text,MAX_RESPONSE_LENGTH);
     }
-    return api_send(fd,&msg);
+    return api_send(fd,&msg,ssl);
 
 }

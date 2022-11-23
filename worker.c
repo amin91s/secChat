@@ -12,6 +12,11 @@
 #include "worker.h"
 #include "db-stuff.h"
 
+#include <openssl/err.h>
+#include <openssl/ssl.h>
+
+#include "ssl-nonblock.h"
+
 struct worker_state
 {
   struct api_state api;
@@ -20,11 +25,11 @@ struct worker_state
   int server_eof;
   sqlite3 *db;
   //TODO: move these to api_state?
-  //int lastReadId; //keeps track of which messages need ot be broadcasted to client
-  char lastReadTime[20];
+  char lastReadTime[20];   //keeps track of which messages need ot be broadcasted to client
   char username[MAX_USR_LENGTH+1];
   int logged;
-
+  SSL_CTX* ctx;
+  SSL* ssl;
 };
 
 /**
@@ -35,7 +40,7 @@ struct worker_state
 static int handle_s2w_notification(struct worker_state *state)
 {
 
-    if(!state->logged)return 0;
+  if(!state->logged)return 0;
   struct api_msg temp;
   sqlite3_stmt *stmt = NULL;
   char *msgPtr = NULL, *usrPtr= NULL, *tPtr= NULL;
@@ -88,8 +93,10 @@ static int handle_s2w_notification(struct worker_state *state)
         msgPtr = NULL;
 
       //send the message to client
-      res = write(state->api.fd, &temp, sizeof(temp));
+      //res = write(state->api.fd, &temp, sizeof(temp));
       //res = send(state->api.fd,&temp,sizeof (temp) ,0);
+      //TODO: fix sending (maybe use server respond (add msg type to respond struct)).
+        res = api_send(state->api.fd,&temp,state->ssl);
       if (res < 0 && errno != EPIPE)
       {
         perror("error: write failed");
@@ -172,7 +179,7 @@ static int execute_request(
                     return -1;
                 }
             } else {
-                send_response(state->api.fd,CMD_NOT_AVAILABLE,NULL);
+                send_response(state->api.fd,CMD_NOT_AVAILABLE,NULL, state->ssl);
                 return 0;
             }
 
@@ -185,7 +192,7 @@ static int execute_request(
                     return 0;
                 }
                 if(!(check_length((char*)msg->privateMsg.receiver,MIN_USR_LENGTH,MAX_USR_LENGTH)) ){
-                    return send_response(state->api.fd,USER_NOT_FOUND,NULL);
+                    return send_response(state->api.fd,USER_NOT_FOUND,NULL, state->ssl);
                 }
                 //check sender's username matches
                 if(strncmp(state->username,msg->privateMsg.sender,MAX_USR_LENGTH)!=0){
@@ -202,13 +209,13 @@ static int execute_request(
                     return 0;
                 } else {
                     //printf("TODO: send user does not exist\n");
-                    return send_response(state->api.fd,USER_NOT_FOUND,NULL);
+                    return send_response(state->api.fd,USER_NOT_FOUND,NULL, state->ssl);
 
 
                 }
             } else {
                 //printf("TODO: send not logged in message to client\n");
-                return send_response(state->api.fd,CMD_NOT_AVAILABLE,NULL);
+                return send_response(state->api.fd,CMD_NOT_AVAILABLE,NULL, state->ssl);
 
             }
         case CMD_REGISTER:
@@ -216,11 +223,11 @@ static int execute_request(
                 //check username and password meet the requirements
                 if(!(check_length((char*)msg->auth.username,MIN_USR_LENGTH,MAX_USR_LENGTH))){
                     //printf("TODO: send length error to user\n");
-                    return send_response(state->api.fd,INVALID_USR_LEN,NULL);
+                    return send_response(state->api.fd,INVALID_USR_LEN,NULL, state->ssl);
 
                 }
                 if(!(check_length((char*)msg->auth.password,MIN_PASS_LENGTH,MAX_PASS_LENGTH))){
-                    return send_response(state->api.fd,INVALID_PSW_LEN,NULL);
+                    return send_response(state->api.fd,INVALID_PSW_LEN,NULL, state->ssl);
 
                 }
                 //don't need to check if username already exists since there is a unique constraint for
@@ -237,7 +244,7 @@ static int execute_request(
                 //send result to client
                 if(res == SQLITE_CONSTRAINT){
                     printf("TODO: send user %s already exist message\n",msg->auth.username);
-                    send_response(state->api.fd,USERNAME_EXISTS,(char*)msg->auth.username);
+                    send_response(state->api.fd,USERNAME_EXISTS,(char*)msg->auth.username, state->ssl);
                     return 0;
                 }
                 else if(res == SQLITE_DONE){
@@ -245,11 +252,11 @@ static int execute_request(
                     strncpy(state->username,msg->auth.username,MAX_USR_LENGTH);
                     state->logged = 1;
                     set_user_status(state->db,state->username,1);
-                    send_response(state->api.fd,REG_SUCCESSFUL,(char *)msg->auth.username);
+                    send_response(state->api.fd,REG_SUCCESSFUL,(char *)msg->auth.username, state->ssl);
                     handle_s2w_notification(state);
                     return 0;
                 }
-            } else return send_response(state->api.fd,ALREADY_LOGGED_IN,NULL);
+            } else return send_response(state->api.fd,ALREADY_LOGGED_IN,NULL, state->ssl);
 
 
 
@@ -259,7 +266,7 @@ static int execute_request(
                 //check username and password meet the requirements
                 if(!(check_length((char*)msg->auth.username,MIN_USR_LENGTH,MAX_USR_LENGTH)) || !(check_length((char*)msg->auth.password,MIN_PASS_LENGTH,MAX_PASS_LENGTH))){
                     //printf("TODO: send length error to user\n");
-                    send_response(state->api.fd,INVALID_USR_LEN,NULL);
+                    send_response(state->api.fd,INVALID_USR_LEN,NULL, state->ssl);
                 }
                 //get username,salt,hash from db if user exists
                 char salt[MAX_SALT_LENGTH+1];
@@ -275,7 +282,7 @@ static int execute_request(
                     //TODO: check if password is correct here
                     if(strncmp((char*)msg->auth.password,hash,MAX_USR_LENGTH) !=0) {
                         //printf("wrong password\n");
-                        send_response(state->api.fd,INVALID_CREDENTIALS,NULL);
+                        send_response(state->api.fd,INVALID_CREDENTIALS,NULL, state->ssl);
 
                         return 0;
                     }
@@ -284,7 +291,7 @@ static int execute_request(
                     strncpy(state->username,msg->auth.username,MAX_USR_LENGTH);
                     state->logged = 1;
                     if(set_user_status(state->db,(char *)msg->auth.username,1) == SQLITE_DONE){
-                        send_response(state->api.fd,LOGIN_SUCCESSFUL,(char *)msg->auth.username);
+                        send_response(state->api.fd,LOGIN_SUCCESSFUL,(char *)msg->auth.username, state->ssl);
                         handle_s2w_notification(state);
                         return 0;
                     } else {
@@ -294,25 +301,27 @@ static int execute_request(
                 } else if (res == 0){
                     //user does not exist
                     //printf("TODO: send invalid credentials message\n");
-                    send_response(state->api.fd,INVALID_CREDENTIALS,NULL);
+                    send_response(state->api.fd,INVALID_CREDENTIALS,NULL, state->ssl);
                     return 0;
                 } else{
                     //something went wrong in the db (should not happen?)
                     printf("db error\n");
                     return -1;
                 }
-            } else return send_response(state->api.fd,ALREADY_LOGGED_IN,NULL);
+            } else return send_response(state->api.fd,ALREADY_LOGGED_IN,NULL, state->ssl);
 
         case CMD_USERS:
-            if(!state->logged) return send_response(state->api.fd,CMD_NOT_AVAILABLE,NULL);
+            if(!state->logged) return send_response(state->api.fd,CMD_NOT_AVAILABLE,NULL, state->ssl);
             else {
                 struct api_msg response;
                 memset(&response,0,sizeof(struct api_msg));
                 response.type=CMD_USERS;
                 int res = get_users(state->db, &response);
                 if (res == 0) {
-                    size_t r = write(state->api.fd, &response, sizeof(struct api_msg));
-                    if (r < 0 && errno != EPIPE) {
+                    //TODO: fix api_send
+                   //size_t r = write(state->api.fd, &response, sizeof(struct api_msg));
+                   ssize_t r = api_send(state->api.fd,&response,state->ssl);
+                   if (r < 0 && errno != EPIPE) {
                         perror("error: write failed");
                     }
                 } else {
@@ -339,13 +348,12 @@ static int handle_client_request(struct worker_state *state)
   assert(state);
 
   /* wait for incoming request, set eof if there are no more requests */
-  r = api_recv(&state->api, &msg);
+  r = api_recv(&state->api, &msg, state->ssl);
   if (r < 0)
   {
     return -1;
   }
-  if (r == 0)
-  {
+  if (r == 0){
     state->eof = 1;
     return 0;
   }
@@ -430,7 +438,8 @@ static int handle_incoming(struct worker_state *state)
   /*  TODO once you implement encryption you may need to call ssl_has_data
   *   here due to buffering (see ssl-nonblock example)
   */
-  if (FD_ISSET(state->api.fd, &readfds))
+
+  if (FD_ISSET(state->api.fd, &readfds) && ssl_has_data(state->ssl))
   {
     if (handle_client_request(state) != 0)
       success = 0;
@@ -469,6 +478,38 @@ static int worker_state_init(
   state->db = db;
   //state->lastReadId = 0;
   memset(state->lastReadTime,0,20);
+
+  /* configure SSL */
+  state->ctx = SSL_CTX_new(TLS_server_method());
+  if(state->ctx == NULL){
+    printf("creation of a new SSL_CTX object failed\n");
+    return 1;
+  }
+  state->ssl = SSL_new(state->ctx);
+  if(state->ssl == NULL){
+      printf("failed to create ssl structure\n");
+      return 1;
+  }
+  SSL_use_certificate_file(state->ssl, PATHCERT, SSL_FILETYPE_PEM);
+  SSL_use_PrivateKey_file(state->ssl, PATHKEY, SSL_FILETYPE_PEM);
+
+  /* set up SSL connection with client */
+
+  if(set_nonblock(connfd) != 0){
+    printf("set_nonblock failed\n");
+    return 1;
+  }
+
+  if(SSL_set_fd(state->ssl, connfd) != 1){
+    printf("setting ssl fd failed\n");
+    return 1;
+  }
+  if(ssl_block_accept(state->ssl, connfd) == -1){
+      printf("ssl_block_accept failed\n");
+      return 1;
+  }
+
+
   return 0;
 }
 
@@ -480,6 +521,10 @@ static int worker_state_init(
 static void worker_state_free(
     struct worker_state *state)
 {
+  /* clean up SSL */
+  SSL_free(state->ssl);
+  SSL_CTX_free(state->ctx);
+
   /* clean up API state */
   api_state_free(&state->api);
 

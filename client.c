@@ -11,6 +11,9 @@
 #include "ui.h"
 #include "util.h"
 
+#include <openssl/ssl.h>
+#include "ssl-nonblock.h"
+
 struct client_state
 {
   struct api_state api;
@@ -19,6 +22,8 @@ struct client_state
   /* TODO client state variables go here */
   int logged;
   char username[MAX_USR_LENGTH+1];
+  SSL_CTX *ctx;
+  SSL *ssl;
 };
 
 /**
@@ -138,7 +143,7 @@ static int client_process_command(struct client_state *state)
         memcpy(msg.privateMsg.sender,state->username,MAX_USR_LENGTH);
         memcpy(msg.privateMsg.message, temp, strlen(temp) + 1);
         memcpy(msg.privateMsg.receiver, receiver, recUsrLen);
-        return (api_send(state->api.fd,&msg));
+        return (api_send(state->api.fd,&msg,state->ssl));
 
 
     }
@@ -188,7 +193,7 @@ static int client_process_command(struct client_state *state)
               strncpy(msg.auth.password,state->ui.password,MAX_PASS_LENGTH);
 
 
-              return (api_send(state->api.fd,&msg));
+              return (api_send(state->api.fd,&msg,state->ssl));
 
               return 0;
             }
@@ -244,7 +249,7 @@ static int client_process_command(struct client_state *state)
                 msg.type = CMD_REGISTER;
                 strncpy(msg.auth.username,state->ui.username,MAX_USR_LENGTH);
                 strncpy(msg.auth.password,state->ui.password,MAX_PASS_LENGTH);
-                return (api_send(state->api.fd,&msg));
+                return (api_send(state->api.fd,&msg,state->ssl));
 
             }
 
@@ -270,7 +275,7 @@ static int client_process_command(struct client_state *state)
                   struct api_msg msg;
                   memset(&msg, 0, sizeof(msg));
                   msg.type = CMD_USERS;
-                  return (api_send(state->api.fd,&msg));
+                  return (api_send(state->api.fd,&msg,state->ssl));
               }
 
           }
@@ -287,7 +292,10 @@ static int client_process_command(struct client_state *state)
         return 0;
       }
     } else {
-
+        if(state->logged == 0){
+            printf("%s","error: command not currently available\n");
+            return 0;
+        }
         remove_trailing_space(temp, strlen(temp));
         state->ui.cmd = CMD_PUBLIC_MSG;
 
@@ -298,7 +306,7 @@ static int client_process_command(struct client_state *state)
         msg.type = CMD_PUBLIC_MSG;
 
 
-        return (api_send(state->api.fd,&msg));
+        return (api_send(state->api.fd,&msg,state->ssl));
     }
   }
 
@@ -389,16 +397,14 @@ static int handle_server_request(struct client_state *state)
   assert(state);
 
   /* wait for incoming request, set eof if there are no more requests */
-  r = api_recv(&state->api, &msg);
+  r = api_recv(&state->api, &msg,state->ssl);
 
   if (r < 0)
   {
-    printf("r<0\n");
     return -1;
   }
   if (r == 0)
   {
-    printf("r==0\n");
     state->eof = 1;
     return 0;
   }
@@ -455,7 +461,15 @@ static int handle_incoming(struct client_state *state)
   /* TODO once you implement encryption you may need to call ssl_has_data
    * here due to buffering (see ssl-nonblock example)
    */
+
+  /*
   if (FD_ISSET(state->api.fd, &readfds))
+  {
+    return handle_server_request(state);
+  }
+  */
+
+  if (FD_ISSET(state->api.fd, &readfds) && ssl_has_data(state->ssl))
   {
     return handle_server_request(state);
   }
@@ -478,18 +492,18 @@ static int client_state_init(struct client_state *state)
     return 0;
 }
 
-static void client_state_free(struct client_state *state)
-{
+static void client_state_free(struct client_state *state){
+    /* TODO any additional client state cleanup */
+    /* clean up SSL */
+    SSL_free(state->ssl);
+    SSL_CTX_free(state->ctx);
+    /* cleanup API state */
+    api_state_free(&state->api);
 
-  /* TODO any additional client state cleanup */
+    /* cleanup UI state */
+    ui_state_free(&state->ui);
 
-  /* cleanup API state */
-  api_state_free(&state->api);
-
-  /* cleanup UI state */
-  ui_state_free(&state->ui);
-
-  memset(state, 0, sizeof(*state));
+    memset(state, 0, sizeof(*state));
 }
 
 static void usage(void)
@@ -525,6 +539,43 @@ int main(int argc, char **argv)
   api_state_init(&state.api, fd);
 
   /* TODO any additional client initialization */
+
+  //TODO: add goto cleanup, and use error stack to print the error
+  /* configure SSL */
+    state.ctx = SSL_CTX_new(TLS_client_method());
+    if(state.ctx == NULL){
+        printf("creation of a new SSL_CTX object failed\n");
+        return 1;
+    }
+    if(SSL_CTX_load_verify_locations(state.ctx,"clientkeys/ca-cert.pem" , NULL) != 1){
+        printf("SSL_CTX_load_verify_locations failed\n");
+        return 1;
+    }
+    state.ssl = SSL_new(state.ctx);
+    if(state.ssl == NULL){
+        printf("failed to create ssl structure\n");
+        return 1;
+    }
+    SSL_set_verify(state.ssl, SSL_VERIFY_PEER, NULL);
+
+
+
+
+  /* configure the socket as non-blocking */
+   if(set_nonblock(fd) != 0){
+       printf("set_nonblock failed\n");
+       return 1;
+   }
+
+  /* set up SSL connection with client */
+    if(SSL_set_fd(state.ssl, fd) != 1){
+        printf("setting ssl fd failed\n");
+        return 1;
+    }
+    if(ssl_block_connect(state.ssl, fd) == -1){
+        printf("ssl_block_connect failed\n");
+        return 1;
+    }
 
   /* client things */
   while (!state.eof && handle_incoming(&state) == 0)
