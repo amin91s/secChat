@@ -2,8 +2,8 @@
 // Created by Amin Soleimani on 30/11/2021.
 //
 
-#ifndef SECCHAT_DB_STUFF_H
-#define SECCHAT_DB_STUFF_H
+#ifndef _DB_STUFF_H_
+#define _DB_STUFF_H_
 
 
 
@@ -158,4 +158,4 @@ int set_user_status(sqlite3 *db, char *username, int status){
 
 
 
-#endif //SECCHAT_DB_STUFF_H
+#endif

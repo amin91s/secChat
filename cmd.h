@@ -3,8 +3,8 @@
 * Created by Amin Soleimani on 12/11/2021.
 */
 
-#ifndef FRAMEWORK_CMD_H
-#define FRAMEWORK_CMD_H
+#ifndef _CMD_H_
+#define _CMD_H_
 #include <time.h>
 
 #define MAX_MESSAGE_LENGTH 512
@@ -72,4 +72,4 @@ struct server_response{
     char message[MAX_RESPONSE_LENGTH+1];
 };
 
-#endif //FRAMEWORK_CMD_H
+#endif
