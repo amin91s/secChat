@@ -60,3 +60,10 @@ int check_length(char *text, int minLen, int maxLen){
    return (len >= minLen && len <= maxLen );
 
 }
+
+void printHex(int size, unsigned char *buf){
+    for(int j = 0; j < size; j++)
+        printf("%X",buf[j]);
+    printf("\n");
+
+}

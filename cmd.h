@@ -13,10 +13,10 @@
 #define MIN_USR_LENGTH 2
 #define MIN_PASS_LENGTH 2
 #define MAX_HASH_LENGTH 64
-#define MAX_SALT_LENGTH 64
+#define SALT_LENGTH 32
 #define MAX_RESPONSE_LENGTH 64
 #define MAX_CHILDREN 16
-
+#define SLOW_HASH_ROUNDS 100
 
 enum cmd_type
 {

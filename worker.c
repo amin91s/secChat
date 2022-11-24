@@ -235,21 +235,34 @@ static int execute_request(
                 //the username. just check the returned value of the query
 
                 //call functions to generate salt and hash the password
+                //TODO: should it be SALT_LENGTH+1?????
                 unsigned char *salt = calloc(SALT_LENGTH,sizeof (unsigned char ));
-                if(generate_salt(salt) == 1){
-                    exit(-1);
-                    //todo: fix
+                if(generate_salt(salt) != 0){
+                    printf("error: could not generate salt\n");
+                    free(salt);
+                    send_response(state->api.fd,CMD_NOT_AVAILABLE,NULL, state->ssl);
+                    return 0;
                 }
-                printf("salt: %s\n",salt);
-
+                unsigned char *hash = calloc(SALT_LENGTH /*EVP_MD_size(EVP_sha256())*/ , sizeof(unsigned char));
+                if(hash_password(salt,hash,(char*)msg->auth.password) != 0){
+                    printf("error: could not hash the password\n");
+                    free(salt);
+                    free(hash);
+                    send_response(state->api.fd,CMD_NOT_AVAILABLE,NULL, state->ssl);
+                    return 0;
+                }
 
 
                 //store salt and hash
-                //int res = register_user(state->db,(char*)msg->auth.username,hash,salt);
-                int res = register_user(state->db,(char*)msg->auth.username,(char*)msg->auth.password,salt);
+                int res = register_user(state->db,(char*)msg->auth.username,hash,salt);
+
+                //free salt and password
+                free(salt);
+                free (hash);
+
+
                 //send result to client
                 if(res == SQLITE_CONSTRAINT){
-                    printf("TODO: send user %s already exist message\n",msg->auth.username);
                     send_response(state->api.fd,USERNAME_EXISTS,(char*)msg->auth.username, state->ssl);
                     return 0;
                 }
@@ -275,23 +288,27 @@ static int execute_request(
                     send_response(state->api.fd,INVALID_USR_LEN,NULL, state->ssl);
                 }
                 //get username,salt,hash from db if user exists
-                char salt[MAX_SALT_LENGTH+1];
-                char hash[MAX_HASH_LENGTH+1];
-                memset(salt, 0, MAX_SALT_LENGTH+1);
-                memset(hash, 0, MAX_HASH_LENGTH+1);
+                unsigned char salt[SALT_LENGTH];
+                unsigned char hash[SALT_LENGTH];
+                memset(salt, 0, SALT_LENGTH);
+                memset(hash, 0, SALT_LENGTH);
                 int res = get_credentials(state->db,(char*)msg->auth.username,hash,salt);
                 if(res == 1){
-
-                    printf("TODO: username exists, check if password is correct\n");
-                    printf("username: %s\npassword: %s\nhardcoded salt: %s\n",msg->auth.username,hash,salt);
-
-                    //TODO: check if password is correct here
-                    if(strncmp((char*)msg->auth.password,hash,MAX_USR_LENGTH) !=0) {
-                        //printf("wrong password\n");
-                        send_response(state->api.fd,INVALID_CREDENTIALS,NULL, state->ssl);
-
+                    unsigned char *temp = calloc(EVP_MD_size(EVP_sha256()) , sizeof(unsigned char));
+                    if(hash_password(salt,temp,(char*)msg->auth.password) != 0){
+                        printf("error: could not hash the password\n");
+                        free(temp);
+                        send_response(state->api.fd,CMD_NOT_AVAILABLE,NULL, state->ssl);
                         return 0;
                     }
+
+                    //TODO: check if password is correct here
+                    if(memcmp(temp,hash,SALT_LENGTH) !=0) {
+                        send_response(state->api.fd,INVALID_CREDENTIALS,NULL, state->ssl);
+                        free(temp);
+                        return 0;
+                    }
+                    free(temp);
                     //if login was successful:
 
                     strncpy(state->username,msg->auth.username,MAX_USR_LENGTH);

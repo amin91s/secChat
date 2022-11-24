@@ -8,7 +8,7 @@
 
 
 
-int register_user(sqlite3 *db, char *username, char *hash, unsigned char *salt){
+int register_user(sqlite3 *db, char *username,unsigned char *hash, unsigned char *salt){
     int r = SQLITE_OK;
     sqlite3_stmt *stmt = NULL;
     sqlite3_open("chat.db", &db);
@@ -22,8 +22,8 @@ int register_user(sqlite3 *db, char *username, char *hash, unsigned char *salt){
     char *sql = "insert into users (username, salt, hash) values (@username, @salt, @hash);";
     if((r = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL)) != SQLITE_OK) goto cleanup;
     if((r = sqlite3_bind_text(stmt, 1,username ,-1 , SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
-    if((r = sqlite3_bind_text(stmt, 2,(char*)salt ,-1 , SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
-    if((r = sqlite3_bind_text(stmt, 3,hash ,-1 , SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
+    if((r = sqlite3_bind_text(stmt, 2,(char*)salt ,SALT_LENGTH , SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
+    if((r = sqlite3_bind_text(stmt, 3,(char*)hash ,SALT_LENGTH , SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
 
     r = sqlite3_step(stmt);
     cleanup:
@@ -34,7 +34,7 @@ int register_user(sqlite3 *db, char *username, char *hash, unsigned char *salt){
     return r;
 }
 //returns 0 if username is not in db, 1 otherwise
-int get_credentials(sqlite3 *db, char *username, char *hash, char *salt){
+int get_credentials(sqlite3 *db, char *username,unsigned char *hash,unsigned char *salt){
     int r = sqlite3_open("chat.db", &db);
     if(r != SQLITE_OK){
         fprintf(stderr, "Error opening database: %s \n", sqlite3_errmsg(db));
@@ -53,8 +53,11 @@ int get_credentials(sqlite3 *db, char *username, char *hash, char *salt){
 
     if(r == SQLITE_ROW){
         //user exists
-        strncpy(salt,(char*)sqlite3_column_text(stmt, 1),MAX_SALT_LENGTH);
-        strncpy(hash,(char*)sqlite3_column_text(stmt, 2),MAX_HASH_LENGTH);
+        //todo: change SALT_LENGTH for hash and memcpy
+        //strncpy((char*)salt,(char*)sqlite3_column_text(stmt, 1),SALT_LENGTH);
+        //strncpy((char*)hash,(char*)sqlite3_column_text(stmt, 2),SALT_LENGTH);
+        memcpy(salt,(char*)sqlite3_column_text(stmt, 1),SALT_LENGTH);
+        memcpy((char*)hash,(char*)sqlite3_column_text(stmt, 2),SALT_LENGTH);
         res = 1;
     } else if(r == SQLITE_DONE){
         res = 0;

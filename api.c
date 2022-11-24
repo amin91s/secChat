@@ -28,7 +28,7 @@ int api_recv(struct api_state *state, struct api_msg *msg, SSL *ssl)
   //size_t ret = read(state->fd, msg, sizeof(struct api_msg));
 
   ssize_t ret = ssl_block_read(ssl,state->fd,msg,sizeof(struct api_msg));
-  printf("api_recv: %zd\n",ret);
+  //printf("api_recv: %zd\n",ret);
   return ret > 0 ? 1 : ret;
 }
 
@@ -39,7 +39,7 @@ int api_send(int fd, struct api_msg *msg, SSL *ssl)
   assert(ssl);
   //size_t ret = send(fd, msg, sizeof(*msg), 0);
   size_t ret = ssl_block_write(ssl,fd,msg,sizeof(*msg));
-  printf("api_send: %zu\n",ret);
+  //printf("api_send: %zu\n",ret);
   return ret > 0 ? 0 : -1;
 }
 
