@@ -16,7 +16,7 @@
 #define SALT_LENGTH 32
 #define MAX_RESPONSE_LENGTH 64
 #define MAX_CHILDREN 16
-#define SLOW_HASH_ROUNDS 100
+#define SLOW_HASH_ROUNDS 1000
 
 enum cmd_type
 {

@@ -43,13 +43,18 @@ int hash_password(unsigned char *salt, unsigned char *hash, char *password){
     printHex(SALT_LENGTH, hash);
 
 
-
+    int r = 0;
     for(int i=0; i < SLOW_HASH_ROUNDS; i++){
-        EVP_DigestInit_ex(ctx, EVP_sha256(), NULL);
-        EVP_DigestUpdate(ctx, salt, SALT_LENGTH);
-        EVP_DigestUpdate(ctx, password, strlen(password));
-        EVP_DigestUpdate(ctx, hash, SALT_LENGTH);
-        EVP_DigestFinal_ex(ctx, hash, NULL);
+        r += EVP_DigestInit_ex(ctx, EVP_sha256(), NULL);
+        r += EVP_DigestUpdate(ctx, salt, SALT_LENGTH);
+        r += EVP_DigestUpdate(ctx, password, strlen(password));
+        r += EVP_DigestUpdate(ctx, hash, SALT_LENGTH);
+        r += EVP_DigestFinal_ex(ctx, hash, NULL);
+    }
+    if(r != (SLOW_HASH_ROUNDS*5)){
+    	printf("slow hash failed\n");
+    	EVP_MD_CTX_free(ctx);
+        return -1;
     }
     printf("hash after %d rounds:\n",SLOW_HASH_ROUNDS);
     printHex(SALT_LENGTH, hash);
