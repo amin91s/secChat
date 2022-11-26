@@ -244,7 +244,7 @@ static int execute_request(
                     return 0;
                 }
                 unsigned char *hash = calloc(SALT_LENGTH /*EVP_MD_size(EVP_sha256())*/ , sizeof(unsigned char));
-                if(hash_password(salt,hash,(char*)msg->auth.password) != 0){
+                if(hash_salt_password(salt,hash,(char*)msg->auth.password) != 0){
                     printf("error: could not hash the password\n");
                     free(salt);
                     free(hash);
@@ -295,7 +295,7 @@ static int execute_request(
                 int res = get_credentials(state->db,(char*)msg->auth.username,hash,salt);
                 if(res == 1){
                     unsigned char *temp = calloc(EVP_MD_size(EVP_sha256()) , sizeof(unsigned char));
-                    if(hash_password(salt,temp,(char*)msg->auth.password) != 0){
+                    if(hash_salt_password(salt,temp,(char*)msg->auth.password) != 0){
                         printf("error: could not hash the password\n");
                         free(temp);
                         send_response(state->api.fd,CMD_NOT_AVAILABLE,NULL, state->ssl);
