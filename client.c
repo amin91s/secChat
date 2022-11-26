@@ -13,6 +13,7 @@
 
 #include <openssl/ssl.h>
 #include "ssl-nonblock.h"
+#include "crypto.h"
 
 struct client_state
 {
@@ -249,6 +250,7 @@ static int client_process_command(struct client_state *state)
                 msg.type = CMD_REGISTER;
                 strncpy(msg.auth.username,state->ui.username,MAX_USR_LENGTH);
                 strncpy(msg.auth.password,state->ui.password,MAX_PASS_LENGTH);
+
                 return (api_send(state->api.fd,&msg,state->ssl));
 
             }
