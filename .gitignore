@@ -3,3 +3,6 @@
 /server
 test-tmp
 chat.db
+ttpkeys
+serverkeys
+clientkeys
