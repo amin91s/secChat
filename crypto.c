@@ -19,7 +19,7 @@ int generate_salt(unsigned char *salt){
 }
 
 //ret 0 on success
-int hash_password(unsigned char *salt, unsigned char *hash, char *password){
+int hash_salt_password(unsigned char *salt, unsigned char *hash, char *password){
     assert(salt);
     assert(hash);
     assert(password);
@@ -60,12 +60,31 @@ int hash_password(unsigned char *salt, unsigned char *hash, char *password){
     printHex(SALT_LENGTH, hash);
 
 
-
-
-
-
     EVP_MD_CTX_free(ctx);
     return 0;
 }
 
 
+int hash_password(unsigned char *hash, char *password){
+    assert(hash);
+    assert(password);
+
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    if(!ctx){
+        printf("could not create context\n");
+        return -1;
+    }
+    if(EVP_DigestInit_ex(ctx, EVP_sha256(), NULL) != 1){
+        printf("could not initialize context\n");
+        EVP_MD_CTX_free(ctx);
+        return -1;
+    }
+    EVP_DigestUpdate(ctx, password, strlen(password));
+    EVP_DigestFinal_ex(ctx, hash, NULL);
+
+    printf("hash(no salt):\n");
+    printHex(SALT_LENGTH, hash);
+
+    EVP_MD_CTX_free(ctx);
+    return 0;
+}
