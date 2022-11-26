@@ -14,6 +14,7 @@
 #include <openssl/ssl.h>
 #include "ssl-nonblock.h"
 #include "crypto.h"
+#include "ttp.h"
 
 struct client_state
 {
@@ -193,7 +194,6 @@ static int client_process_command(struct client_state *state)
               strncpy(msg.auth.username,state->ui.username,MAX_USR_LENGTH);
               strncpy(msg.auth.password,state->ui.password,MAX_PASS_LENGTH);
 
-
               return (api_send(state->api.fd,&msg,state->ssl));
 
               return 0;
@@ -344,10 +344,21 @@ static int execute_request(
               strncpy(state->username,msg->serverResponse.message,MAX_USR_LENGTH);
               state->logged=1;
               printf("registration succeeded\n");
+              if(gen_rsa(state->ui.username,state->ui.password) != -1)
+                  printf("rsa keys generated\n");
+              else{
+                  printf("could not generate rsa keys\n");
+                  return 1;
+                  }
               return 0;
           case LOGIN_SUCCESSFUL:
               strncpy(state->username,msg->serverResponse.message,MAX_USR_LENGTH);
               state->logged=1;
+              //get the private key
+              unsigned char *key = calloc(SHA256_HASH_SIZE , sizeof(unsigned char));
+              get_priv_key(key,state->ui.username,state->ui.password);
+              //todo: check the return val and store private key in memory
+
               printf("authentication succeeded\n");
               return 0;
           case INVALID_CREDENTIALS:

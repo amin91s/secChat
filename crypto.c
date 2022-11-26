@@ -6,7 +6,6 @@
 #include <string.h>
 #include "cmd.h"
 #include <openssl/rand.h>
-#include <openssl/evp.h>
 #include "util.h"
 
 int generate_salt(unsigned char *salt){
@@ -39,8 +38,8 @@ int hash_salt_password(unsigned char *salt, unsigned char *hash, char *password)
     EVP_DigestUpdate(ctx, salt, SALT_LENGTH);
     EVP_DigestUpdate(ctx, password, strlen(password));
     EVP_DigestFinal_ex(ctx, hash, NULL);
-    printf("initial hash:\n");
-    printHex(SALT_LENGTH, hash);
+    //printf("initial hash:\n");
+    //printHex(SALT_LENGTH, hash);
 
 
     int r = 0;
@@ -56,8 +55,8 @@ int hash_salt_password(unsigned char *salt, unsigned char *hash, char *password)
     	EVP_MD_CTX_free(ctx);
         return -1;
     }
-    printf("hash after %d rounds:\n",SLOW_HASH_ROUNDS);
-    printHex(SALT_LENGTH, hash);
+    //printf("hash after %d rounds:\n",SLOW_HASH_ROUNDS);
+    //printHex(SALT_LENGTH, hash);
 
 
     EVP_MD_CTX_free(ctx);
@@ -82,8 +81,8 @@ int hash_password(unsigned char *hash, char *password){
     EVP_DigestUpdate(ctx, password, strlen(password));
     EVP_DigestFinal_ex(ctx, hash, NULL);
 
-    printf("hash(no salt):\n");
-    printHex(SALT_LENGTH, hash);
+    //printf("hash(no salt):\n");
+    //printHex(SALT_LENGTH, hash);
 
     EVP_MD_CTX_free(ctx);
     return 0;
