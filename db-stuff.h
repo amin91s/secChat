@@ -70,7 +70,7 @@ int get_credentials(sqlite3 *db, char *username,unsigned char *hash,unsigned cha
     return res;
 }
 
-int insert_msg(sqlite3 *db,char *sender,char *receiver, char *message, size_t encrypted_msg_len, int msg_type){
+int insert_msg(sqlite3 *db,char *sender,char *receiver, char *message, size_t encrypted_msg_len, int msg_type, char *sig){
     int r = sqlite3_open("chat.db", &db);
     if(r != SQLITE_OK){
         fprintf(stderr, "Error opening database: %s \n", sqlite3_errmsg(db));
@@ -81,9 +81,9 @@ int insert_msg(sqlite3 *db,char *sender,char *receiver, char *message, size_t en
     sqlite3_stmt *stmt = NULL;
     char *sql = NULL;
     if(msg_type == CMD_PUBLIC_MSG) {
-        sql = "insert into msg (timestamp, msg, sender, receiver,msg_type) values (datetime('now'),?1,?2,?3,?4);";
+        sql = "insert into msg (timestamp, msg, sender, receiver,msg_type,signature) values (datetime('now'),?1,?2,?3,?4,?5);";
     } else{
-        sql = "insert into msg (timestamp, msg, sender, receiver,msg_type) values (datetime('now'),?1,?2,(select username from users where username = ?3),?4);";
+        sql = "insert into msg (timestamp, msg, sender, receiver,msg_type,signature) values (datetime('now'),?1,?2,(select username from users where username = ?3),?4,?5);";
     }
 
     if((r = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL)) != SQLITE_OK) goto cleanup;
@@ -94,6 +94,7 @@ int insert_msg(sqlite3 *db,char *sender,char *receiver, char *message, size_t en
     if((r= sqlite3_bind_text(stmt, 2, sender, -1, SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
     if((r= sqlite3_bind_text(stmt, 3, receiver, -1, SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
     if((r= sqlite3_bind_int(stmt, 4, msg_type)) != SQLITE_OK) goto cleanup;
+    if((r= sqlite3_bind_text(stmt, 5, sig, SIG_LENGTH, SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
 
     r = sqlite3_step(stmt);
     cleanup:

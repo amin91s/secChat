@@ -146,8 +146,7 @@ int gen_rsa(char *usr, char *passwd){
 
 }
 
-int get_priv_key(unsigned char *key, char *usr, char *pass){
-    assert(key);
+int get_priv_key(EVP_PKEY *key, char *usr, char *pass){
     assert(pass);
     assert(usr);
 
@@ -159,7 +158,7 @@ int get_priv_key(unsigned char *key, char *usr, char *pass){
         printf("incorrect password length\n");
         return -1;
     }
-    ///todo: implement validatePath(usrname);
+    ///todo: implement validatePath(usrname); + goto cleanup
 
     //check if password is correct
     unsigned char *hash = calloc(SHA256_HASH_SIZE , sizeof(unsigned char));
@@ -187,7 +186,6 @@ int get_priv_key(unsigned char *key, char *usr, char *pass){
         fclose(fp);
         return -1;
     }
-    printf("read hash:\n");
     if(memcmp(storedHash,hash,SHA256_HASH_SIZE) !=0){
         printf("wrong password! you can't access keys.\n");
         free(hash);
@@ -195,12 +193,73 @@ int get_priv_key(unsigned char *key, char *usr, char *pass){
         fclose(fp);
         return -1;
     } else{
-        //memset(key,0,SHA256_HASH_SIZE);
-        printf("correct password\nreturn key");
+        memset(path,0,256);
+        snprintf(path,256,"clientkeys/%s/%s-key.pem",usr,usr);
+        FILE *keyfile = fopen(path, "r");
+        if(keyfile == NULL){
+            printf("file can't be opened\n");
+            free(hash);
+            free(storedHash);
+            fclose(fp);
+            return -1;
+        }
+        RSA *rsa = PEM_read_RSAPrivateKey(keyfile, NULL, NULL, NULL);
+        if(!rsa){
+            printf("could not read rsa from pem\n");
+            //todo: goto cleanup
+
+        }
+        fclose(keyfile);
+        EVP_PKEY_assign_RSA(key, rsa);
+        //printPkey(key);
+
     }
     free(hash);
     free(storedHash);
     fclose(fp);
     return 0;
 
+}
+//this function verifies the certificate
+int get_cert(X509 *usrcert, char *usr){
+    assert(usr);
+    EVP_PKEY *capubkey;
+    X509 *cacert;
+    if(!check_length(usr,MIN_USR_LENGTH,MAX_USR_LENGTH)){
+        printf("incorrect username length\n");
+        return -1;
+    }
+    ///todo: implement validatePath(usrname); + goto cleanup
+
+    FILE *path = fopen("ttpkeys/ca-cert.pem", "r");
+    if(path == NULL){
+        printf("could not load cacert\n");
+        return -1;
+    }
+    cacert = PEM_read_X509(path, NULL, NULL, NULL);
+    capubkey = X509_get0_pubkey(cacert);
+
+    char buf[256];
+    memset(buf,0,256);
+    snprintf(buf,256,"clientkeys/%s/%s-ca-cert.pem",usr,usr);
+    fclose(path);
+    path = NULL;
+    path = fopen(buf,"r");
+    if(path == NULL){
+        printf("could not load user's cert\n");
+        return -1;
+    }
+    usrcert = PEM_read_X509(path, &usrcert, NULL, NULL);
+    /* verify CA signature */
+    int r = X509_verify(usrcert, capubkey);
+
+    if(r != 1){
+        printf("certificate is not correctly signed by CA\n");
+        fclose(path);
+        return -1;
+    }
+
+
+    fclose(path);
+    return 0;
 }

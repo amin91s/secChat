@@ -26,6 +26,7 @@ struct client_state
   char username[MAX_USR_LENGTH+1];
   SSL_CTX *ctx;
   SSL *ssl;
+  EVP_PKEY *evpKey;
 };
 
 /**
@@ -145,6 +146,7 @@ static int client_process_command(struct client_state *state)
         memcpy(msg.privateMsg.sender,state->username,MAX_USR_LENGTH);
         memcpy(msg.privateMsg.message, temp, strlen(temp) + 1);
         memcpy(msg.privateMsg.receiver, receiver, recUsrLen);
+        sign(&msg,state->evpKey);
         return (api_send(state->api.fd,&msg,state->ssl));
 
 
@@ -303,11 +305,11 @@ static int client_process_command(struct client_state *state)
 
         struct api_msg msg;
         memset(&msg, 0, sizeof(msg));
+        msg.type = CMD_PUBLIC_MSG;
         memcpy(msg.publicMsg.sender,state->username,MAX_USR_LENGTH);
         memcpy(msg.publicMsg.message, temp, strlen(temp) + 1);
-        msg.type = CMD_PUBLIC_MSG;
 
-
+        sign(&msg,state->evpKey);
         return (api_send(state->api.fd,&msg,state->ssl));
     }
   }
@@ -326,17 +328,28 @@ static int client_process_command(struct client_state *state)
  */
 static int execute_request(
     struct client_state *state,
-    const struct api_msg *msg)
+     struct api_msg *msg)
 {
   if (msg->type == CMD_PUBLIC_MSG)
   {
     //const struct public_msg *temp =  &msg->publicMsg;
     //printf("%s %s: %s", msg->time, temp->sender, temp->message);
 
-    //TODO: verify the signature here?? is it needed if server is verified?
+
+    //todo: changed const struct to struct. figure out later
+
+    if(verify_sig(msg,msg->publicMsg.sender) != 0){
+        printf("signature for received message is incorrect. dropping...\n");
+        return 0;
+    }
 
     printf("%s %s: %s", msg->time, msg->publicMsg.sender, msg->publicMsg.message);
   } else if(msg->type == CMD_PRIVATE_MSG){
+      if(verify_sig(msg,msg->privateMsg.sender) != 0){
+          printf("signature for received message is incorrect. dropping...\n");
+          return 0;
+      }
+
       printf("%s %s: @%s %s", msg->time, msg->privateMsg.sender,msg->privateMsg.receiver, msg->privateMsg.message);
   } else if(msg->type == SERVER_RESPONSE){
       switch (msg->serverResponse.response) {
@@ -344,8 +357,13 @@ static int execute_request(
               strncpy(state->username,msg->serverResponse.message,MAX_USR_LENGTH);
               state->logged=1;
               printf("registration succeeded\n");
-              if(gen_rsa(state->ui.username,state->ui.password) != -1)
+              if(gen_rsa(state->ui.username,state->ui.password) != -1){
                   printf("rsa keys generated\n");
+                  if(get_priv_key(state->evpKey,state->ui.username,state->ui.password) != 0){
+                      printf("could not get private key\n");
+                      return 1;
+                  }
+              }
               else{
                   printf("could not generate rsa keys\n");
                   return 1;
@@ -355,10 +373,10 @@ static int execute_request(
               strncpy(state->username,msg->serverResponse.message,MAX_USR_LENGTH);
               state->logged=1;
               //get the private key
-              unsigned char *key = calloc(SHA256_HASH_SIZE , sizeof(unsigned char));
-              get_priv_key(key,state->ui.username,state->ui.password);
-              //todo: check the return val and store private key in memory
-
+              if(get_priv_key(state->evpKey,state->ui.username,state->ui.password) != 0){
+                  printf("could not get private key\n");
+                  return 1;
+              }
               printf("authentication succeeded\n");
               return 0;
           case INVALID_CREDENTIALS:
@@ -499,6 +517,11 @@ static int client_state_init(struct client_state *state)
 
   /* TODO any additional client state initialization */
 
+  state->evpKey = EVP_PKEY_new();
+  if(!state->evpKey){
+      printf("could not allocate EVP_PKEY structure\n");
+      return 1;
+  }
   //already set to 0 by memset?
   state->logged = 0;
 
@@ -510,6 +533,10 @@ static void client_state_free(struct client_state *state){
     /* clean up SSL */
     SSL_free(state->ssl);
     SSL_CTX_free(state->ctx);
+
+    if (state->evpKey)
+        EVP_PKEY_free(state->evpKey);
+
     /* cleanup API state */
     api_state_free(&state->api);
 

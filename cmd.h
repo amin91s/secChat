@@ -17,7 +17,7 @@
 #define MAX_RESPONSE_LENGTH 64
 #define MAX_CHILDREN 16
 #define SLOW_HASH_ROUNDS 1000
-
+#define SIG_LENGTH 256
 enum cmd_type
 {
     CMD_LOGIN = 0,

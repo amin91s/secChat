@@ -67,3 +67,11 @@ void printHex(int size, unsigned char *buf){
     printf("\n");
 
 }
+
+void printPkey(EVP_PKEY *key){
+    assert(key);
+    printf("pkey:\n");
+    BIO *bp = BIO_new_fp(stdout, BIO_NOCLOSE);
+    EVP_PKEY_print_private(bp, key, 1, NULL);
+    BIO_free(bp);
+}

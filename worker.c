@@ -68,6 +68,7 @@ static int handle_s2w_notification(struct worker_state *state)
 
       while (sqlite3_step(stmt) == SQLITE_ROW)
     {
+        memset(&temp,0,sizeof(temp));
       //state->lastReadId = sqlite3_column_int(stmt, 0);
       tPtr = (char *)sqlite3_column_text(stmt, 1);
       strncpy(temp.time, tPtr, 20);
@@ -87,8 +88,9 @@ static int handle_s2w_notification(struct worker_state *state)
           strncpy(temp.privateMsg.sender, usrPtr, strlen(usrPtr) + 1);
           usrPtr = (char *)sqlite3_column_text(stmt, 4);
           strncpy(temp.privateMsg.receiver, usrPtr, strlen(usrPtr) + 1);
-      }
 
+      }
+        memcpy((char*)temp.sig,(char*)sqlite3_column_text(stmt, 6),SIG_LENGTH);
         usrPtr = NULL;
         tPtr = NULL;
         msgPtr = NULL;
@@ -97,6 +99,7 @@ static int handle_s2w_notification(struct worker_state *state)
       //res = write(state->api.fd, &temp, sizeof(temp));
       //res = send(state->api.fd,&temp,sizeof (temp) ,0);
       //TODO: fix sending (maybe use server respond (add msg type to respond struct)).
+
         res = api_send(state->api.fd,&temp,state->ssl);
       if (res < 0 && errno != EPIPE)
       {
@@ -151,7 +154,7 @@ __attribute__((unused)) static int notify_workers(struct worker_state *state)
  */
 static int execute_request(
     struct worker_state *state,
-    const struct api_msg *msg)
+     struct api_msg *msg)
 {
   /* TODO handle request and reply to client */
     switch (msg->type) {
@@ -169,9 +172,16 @@ static int execute_request(
                 }
                 //TODO: add other checks???
                 //TODO: perform crypto stuff (check signature,...) here
+//                struct api_msg *temp = calloc(1,sizeof(*msg));
+//                memcpy(temp,msg,sizeof(*msg));
+                if(verify_sig(msg,msg->publicMsg.sender) != 0){
+                    //TODO: send signature error response
+                    return 0;
+                }
+//                free(temp);
                 //TODO: pass length of encrypted message instead of this
                 size_t encryptedLen = strlen(msg->publicMsg.message);
-                int res = insert_msg(state->db,(char*)msg->publicMsg.sender,"",(char*)msg->publicMsg.message,encryptedLen,CMD_PUBLIC_MSG);
+                int res = insert_msg(state->db,(char*)msg->publicMsg.sender,"",(char*)msg->publicMsg.message,encryptedLen,CMD_PUBLIC_MSG, (char*)msg->sig);
                 if(res == SQLITE_DONE){
                     notify_workers(state);
                     return 0;
@@ -200,11 +210,13 @@ static int execute_request(
                     printf("TODO: send username does not match\n");
                 }
 
-
-                //TODO: perform crypto stuff (check signature,...) here
+                if(verify_sig(msg,msg->privateMsg.sender) != 0){
+                    //TODO: send signature error response
+                    return 0;
+                }
                 //TODO: pass length of encrypted message instead of this
                 size_t encryptedLen = strlen(msg->privateMsg.message);
-                int res = insert_msg(state->db,(char*)msg->privateMsg.sender,(char*)msg->privateMsg.receiver,(char*)msg->privateMsg.message,encryptedLen,CMD_PRIVATE_MSG);
+                int res = insert_msg(state->db,(char*)msg->privateMsg.sender,(char*)msg->privateMsg.receiver,(char*)msg->privateMsg.message,encryptedLen,CMD_PRIVATE_MSG, (char*)msg->sig);
                 if(res == SQLITE_DONE){
                     notify_workers(state);
                     return 0;
@@ -545,8 +557,8 @@ static void worker_state_free(
     struct worker_state *state)
 {
   /* clean up SSL */
-  SSL_free(state->ssl);
-  SSL_CTX_free(state->ctx);
+  if(state->ssl) SSL_free(state->ssl);
+  if(state->ctx) SSL_CTX_free(state->ctx);
 
   /* clean up API state */
   api_state_free(&state->api);

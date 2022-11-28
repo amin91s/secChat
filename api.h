@@ -8,6 +8,7 @@ struct api_msg
 {
   enum cmd_type type;
   char time[20];
+  unsigned char sig[256];
   union {
       struct public_msg publicMsg;
       struct private_msg privateMsg;
