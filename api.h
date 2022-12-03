@@ -4,6 +4,8 @@
 #include "cmd.h"
 #include <openssl/ssl.h>
 #include "ssl-nonblock.h"
+
+
 struct api_msg
 {
   enum cmd_type type;
@@ -15,6 +17,7 @@ struct api_msg
       struct auth auth;
       struct users users;
       struct server_response serverResponse;
+      struct key_exchange keyExchange;
   };
 
 };
@@ -35,4 +38,7 @@ void api_state_init(struct api_state *state, int fd);
 int api_send(int fd, struct api_msg *msg, SSL* ssl);
 void set_time(char *temp);
 int send_response(int fd, enum response, char *text, SSL *ssl);
+int receiver_exists(char *usr);
+
+
 #endif /* defined(_API_H_) */

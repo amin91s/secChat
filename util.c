@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-
+#include<sys/stat.h>
 #include "util.h"
 
 int lookup_host_ipv4(const char *hostname, struct in_addr *addr) {
@@ -74,4 +74,63 @@ void printPkey(EVP_PKEY *key){
     BIO *bp = BIO_new_fp(stdout, BIO_NOCLOSE);
     EVP_PKEY_print_private(bp, key, 1, NULL);
     BIO_free(bp);
+}
+
+
+
+/**
+ * @brief               Validates access to client's keys.
+ * @param               usr sanitized username
+ * @return              0 for correct password, 1 for wrong password, -1 on errors.
+ */
+int validate_clientkey_access(char *usr, char *pass){
+    assert(usr);
+    assert(pass);
+
+    unsigned char *hash = calloc(SHA256_HASH_SIZE , sizeof(unsigned char));
+    if(hash_password(hash,pass) != 0){
+        free(hash);
+        return -1;
+    }
+
+    FILE *fp;
+    char path[256];
+    memset(path,0,256);
+    snprintf(path,256,"clientkeys/%s/hash.bin",usr);
+    fp = fopen(path,"rb");
+    if(fp == NULL) {
+        printf("file can't be opened\n");
+        free(hash);
+        return -1;
+    }
+
+    unsigned char *storedHash = calloc(SHA256_HASH_SIZE , sizeof(unsigned char));
+    if(fread(storedHash,1,SHA256_HASH_SIZE,fp) <= 0){
+        printf("could not read the hash file\n");
+        free(hash);
+        free(storedHash);
+        fclose(fp);
+        return -1;
+    }
+    if(memcmp(storedHash,hash,SHA256_HASH_SIZE) !=0){
+        printf("wrong password! you can't access keys.\n");
+        free(hash);
+        free(storedHash);
+        fclose(fp);
+        return 1;
+    }
+
+    free(hash);
+    free(storedHash);
+    fclose(fp);
+    return 0;
+}
+
+/**
+ * @param               usr sanitized path
+ */
+int fileExists(const char *filename){
+    struct stat buffer;
+    return (stat(filename,&buffer) == 0);
+
 }

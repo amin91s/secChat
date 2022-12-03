@@ -328,7 +328,7 @@ static int server_state_init(struct server_state *state, sqlite3 *db)
   state->db = db;
 
   //initialize sql table
-  int res_create = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS msg(id INTEGER PRIMARY KEY , timestamp integer NOT NULL, msg text NOT NULL, sender text NOT NULL, receiver text NOT NULL, msg_type integer NOT NULL, signature text NOT NULL)", NULL, NULL, NULL);
+  int res_create = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS msg(id INTEGER PRIMARY KEY , timestamp integer NOT NULL, msg text NOT NULL, sender text NOT NULL, receiver text NOT NULL, msg_type integer NOT NULL, signature text NOT NULL, len INTEGER NOT NULL)", NULL, NULL, NULL);
     if (res_create != 0)
     {
         fprintf(stderr, "Unable to create headers for database. Error: %s \n", sqlite3_errmsg(db));
@@ -343,11 +343,15 @@ static int server_state_init(struct server_state *state, sqlite3 *db)
     fprintf(stderr, "Unable to create headers for database. Error: %s \n", sqlite3_errmsg(db));
     return -1;
   }
- // res_create = sqlite3_exec(db,"CREATE TABLE IF NOT EXISTS msg(id INTEGER PRIMARY KEY, msg_type	text NOT NULL,msg_len INTEGER NOT NULL, sender TEXT NOT NULL  , receiver TEXT, timestamp INTEGER NOT NULL, msg BLOB NOT NULL, FOREIGN KEY (sender)  REFERENCES users(username))",NULL,NULL,NULL);
-   // if (res_create != 0)
-   // {
-   //     fprintf(stderr, "Unable to create headers for database2. Error: %s \n", sqlite3_errmsg(db));
-   // }
+
+  res_create = sqlite3_exec(db,"CREATE TABLE IF NOT EXISTS keys(user1 TEXT NOT NULL, user2 TEXT NOT NULL, key text NOT NULL, iv TEXT NOT NULL UNIQUE, signature text NOT NULL, unique (user1, user2))",NULL,NULL,NULL);
+
+  if (res_create != 0)
+    {
+        fprintf(stderr, "Unable to create headers for database. Error: %s \n", sqlite3_errmsg(db));
+        return -1;
+    }
+
     sqlite3_busy_timeout( state->db, 2000 );
 
   //reset online status (if server was terminated while users where connected)

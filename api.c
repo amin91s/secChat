@@ -109,3 +109,4 @@ int send_response(int fd,enum response r,char *text, SSL *ssl){
     return api_send(fd,&msg,ssl);
 
 }
+

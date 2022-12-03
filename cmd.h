@@ -23,9 +23,11 @@ enum cmd_type
     CMD_LOGIN = 0,
     CMD_PRIVATE_MSG = 1,
     CMD_PUBLIC_MSG = 2,
-    CMD_REGISTER= 3,
-    CMD_USERS=4,
-    SERVER_RESPONSE=5
+    AES_KEY_INSERT= 3,
+    AES_KEY_REQUEST= 4,
+    CMD_REGISTER= 5,
+    CMD_USERS=6,
+    SERVER_RESPONSE=7
 };
 
 enum response{
@@ -38,11 +40,14 @@ enum response{
     INVALID_CMD_FORMAT,
     INVALID_USR_LEN,
     INVALID_PSW_LEN,
-    ALREADY_LOGGED_IN
+    ALREADY_LOGGED_IN,
+    KEY_ALREADY_EXISTS,
+    KEY_NOT_FOUND,
+    KEY_INSERT_SUCCESSFUL
 
 };
 
-//TODO: add crypto stuff if needed
+
 
 struct public_msg{
     char message[MAX_MESSAGE_LENGTH+1];
@@ -55,6 +60,7 @@ struct private_msg{
     char message[MAX_MESSAGE_LENGTH+1];
     char sender[MAX_USR_LENGTH+1];
     char receiver[MAX_USR_LENGTH + 1];
+    int len;
 };
 //used for both login and register
 struct auth{
@@ -70,6 +76,14 @@ struct users{
 struct server_response{
     enum response response;
     char message[MAX_RESPONSE_LENGTH+1];
+};
+
+struct key_exchange{
+    char key[MAX_MESSAGE_LENGTH+1];
+    int keyLen;
+    unsigned char iv[MAX_MESSAGE_LENGTH+1];
+    char sender[MAX_USR_LENGTH+1];
+    char receiver[MAX_USR_LENGTH + 1];
 };
 
 #endif

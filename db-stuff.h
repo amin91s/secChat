@@ -5,7 +5,8 @@
 #ifndef _DB_STUFF_H_
 #define _DB_STUFF_H_
 
-
+#include "crypto.h"
+#include "cmd.h"
 
 
 int register_user(sqlite3 *db, char *username,unsigned char *hash, unsigned char *salt){
@@ -70,7 +71,7 @@ int get_credentials(sqlite3 *db, char *username,unsigned char *hash,unsigned cha
     return res;
 }
 
-int insert_msg(sqlite3 *db,char *sender,char *receiver, char *message, size_t encrypted_msg_len, int msg_type, char *sig){
+int insert_msg(sqlite3 *db,char *sender,char *receiver, char *message, int encrypted_msg_len, int msg_type, char *sig){
     int r = sqlite3_open("chat.db", &db);
     if(r != SQLITE_OK){
         fprintf(stderr, "Error opening database: %s \n", sqlite3_errmsg(db));
@@ -81,20 +82,22 @@ int insert_msg(sqlite3 *db,char *sender,char *receiver, char *message, size_t en
     sqlite3_stmt *stmt = NULL;
     char *sql = NULL;
     if(msg_type == CMD_PUBLIC_MSG) {
-        sql = "insert into msg (timestamp, msg, sender, receiver,msg_type,signature) values (datetime('now'),?1,?2,?3,?4,?5);";
+        sql = "insert into msg (timestamp, msg, sender, receiver,msg_type,signature,len) values (datetime('now'),?1,?2,?3,?4,?5,?6);";
     } else{
-        sql = "insert into msg (timestamp, msg, sender, receiver,msg_type,signature) values (datetime('now'),?1,?2,(select username from users where username = ?3),?4,?5);";
+        sql = "insert into msg (timestamp, msg, sender, receiver,msg_type,signature,len) values (datetime('now'),?1,?2,(select username from users where username = ?3),?4,?5,?6);";
     }
 
     if((r = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL)) != SQLITE_OK) goto cleanup;
 
     //bind as text for testing. change it later
+    //TODO: should I change this to blob, or use enc_len??
     //r+= sqlite3_bind_blob(stmt, 1,message, encrypted_msg_len, SQLITE_STATIC);
     if((r= sqlite3_bind_text(stmt, 1, message, -1, SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
     if((r= sqlite3_bind_text(stmt, 2, sender, -1, SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
     if((r= sqlite3_bind_text(stmt, 3, receiver, -1, SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
     if((r= sqlite3_bind_int(stmt, 4, msg_type)) != SQLITE_OK) goto cleanup;
     if((r= sqlite3_bind_text(stmt, 5, sig, SIG_LENGTH, SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
+    if((r= sqlite3_bind_int(stmt, 6, encrypted_msg_len)) != SQLITE_OK) goto cleanup;
 
     r = sqlite3_step(stmt);
     cleanup:
@@ -160,6 +163,40 @@ int set_user_status(sqlite3 *db, char *username, int status){
     return r;
 }
 
+int insert_key(sqlite3 *db,char *sender,char *receiver, char *key, int enc_len, char *iv ,char *sig){
+    int r = sqlite3_open("chat.db", &db);
+    if(r != SQLITE_OK){
+        fprintf(stderr, "Error opening database: %s \n", sqlite3_errmsg(db));
+        sqlite3_close(db);
+        return -1;
+    }
+    char *usr1, *usr2;
+    if(strcmp(sender,receiver) >= 1){
+        usr1 = receiver;
+        usr2 = sender;
+    }
+    else{
+        usr1 = sender;
+        usr2 = receiver;
+    }
+
+    sqlite3_busy_timeout(db, 2000 );
+    sqlite3_stmt *stmt = NULL;
+    char *sql = "insert into keys (user1, user2, key, signature, iv) values (?1,?2,?3,?4,?5);";
+    if((r = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL)) != SQLITE_OK) goto cleanup;
+    if((r= sqlite3_bind_text(stmt, 1, usr1, -1, SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
+    if((r= sqlite3_bind_text(stmt, 2, usr2, -1, SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
+    if((r= sqlite3_bind_text(stmt, 3, key, enc_len , SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
+    if((r= sqlite3_bind_text(stmt, 4, sig, SIG_LENGTH, SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
+    if((r= sqlite3_bind_text(stmt, 5, iv, IV_LEN , SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
+    r = sqlite3_step(stmt);
+    cleanup:
+    if (r != SQLITE_OK && r != SQLITE_DONE && r != SQLITE_CONSTRAINT)
+        fprintf(stderr, "database error: %s\n", sqlite3_errmsg(db));
+    if (stmt) sqlite3_finalize(stmt);
+    if (db) sqlite3_close(db);
+    return r;
+}
 
 
 #endif

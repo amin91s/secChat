@@ -161,66 +161,31 @@ int get_priv_key(EVP_PKEY *key, char *usr, char *pass){
     ///todo: implement validatePath(usrname); + goto cleanup
 
     //check if password is correct
-    unsigned char *hash = calloc(SHA256_HASH_SIZE , sizeof(unsigned char));
-    if(hash_password(hash,pass) != 0){
-        free(hash);
-        return -1;
-    }
-    //todo:make this a function
-    FILE *fp;
-    char path[256];
-    memset(path,0,256);
-    snprintf(path,256,"clientkeys/%s/hash.bin",usr);
-    fp = fopen(path,"rb");
-    if(fp == NULL) {
-        printf("file can't be opened\n");
-        free(hash);
-        return -1;
-    }
-
-    unsigned char *storedHash = calloc(SHA256_HASH_SIZE , sizeof(unsigned char));
-    if(fread(storedHash,1,SHA256_HASH_SIZE,fp) <= 0){
-        printf("could not read the hash file\n");
-        free(hash);
-        free(storedHash);
-        fclose(fp);
-        return -1;
-    }
-    if(memcmp(storedHash,hash,SHA256_HASH_SIZE) !=0){
-        printf("wrong password! you can't access keys.\n");
-        free(hash);
-        free(storedHash);
-        fclose(fp);
-        return -1;
-    } else{
+    if(validate_clientkey_access(usr,pass) == 0){
+        char path[256];
         memset(path,0,256);
         snprintf(path,256,"clientkeys/%s/%s-key.pem",usr,usr);
         FILE *keyfile = fopen(path, "r");
         if(keyfile == NULL){
             printf("file can't be opened\n");
-            free(hash);
-            free(storedHash);
-            fclose(fp);
             return -1;
         }
         RSA *rsa = PEM_read_RSAPrivateKey(keyfile, NULL, NULL, NULL);
         if(!rsa){
             printf("could not read rsa from pem\n");
             //todo: goto cleanup
-
         }
         fclose(keyfile);
         EVP_PKEY_assign_RSA(key, rsa);
         //printPkey(key);
-
+        return 0;
     }
-    free(hash);
-    free(storedHash);
-    fclose(fp);
-    return 0;
-
+    return -1;
 }
+
 //this function verifies the certificate
+//usrcert is freed by caller
+// 1 if user does not exist
 int get_cert(X509 *usrcert, char *usr){
     assert(usr);
     EVP_PKEY *capubkey;
@@ -243,6 +208,10 @@ int get_cert(X509 *usrcert, char *usr){
     memset(buf,0,256);
     snprintf(buf,256,"clientkeys/%s/%s-ca-cert.pem",usr,usr);
     fclose(path);
+    if(!fileExists(buf)){
+        printf("user does not exist\n");
+        return 1;
+    }
     path = NULL;
     path = fopen(buf,"r");
     if(path == NULL){
@@ -262,4 +231,12 @@ int get_cert(X509 *usrcert, char *usr){
 
     fclose(path);
     return 0;
+}
+
+int receiver_exists(char *usr){
+    assert(usr);
+    X509 *usrcert = X509_new();
+    int r = get_cert(usrcert,usr);
+    X509_free(usrcert);
+    return r == 0 ? 1:0;
 }

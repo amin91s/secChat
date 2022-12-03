@@ -88,6 +88,7 @@ static int handle_s2w_notification(struct worker_state *state)
           strncpy(temp.privateMsg.sender, usrPtr, strlen(usrPtr) + 1);
           usrPtr = (char *)sqlite3_column_text(stmt, 4);
           strncpy(temp.privateMsg.receiver, usrPtr, strlen(usrPtr) + 1);
+          temp.privateMsg.len = sqlite3_column_int(stmt, 7);
 
       }
         memcpy((char*)temp.sig,(char*)sqlite3_column_text(stmt, 6),SIG_LENGTH);
@@ -179,9 +180,8 @@ static int execute_request(
                     return 0;
                 }
 //                free(temp);
-                //TODO: pass length of encrypted message instead of this
-                size_t encryptedLen = strlen(msg->publicMsg.message);
-                int res = insert_msg(state->db,(char*)msg->publicMsg.sender,"",(char*)msg->publicMsg.message,encryptedLen,CMD_PUBLIC_MSG, (char*)msg->sig);
+
+                int res = insert_msg(state->db,(char*)msg->publicMsg.sender,"",(char*)msg->publicMsg.message,0,CMD_PUBLIC_MSG, (char*)msg->sig);
                 if(res == SQLITE_DONE){
                     notify_workers(state);
                     return 0;
@@ -214,20 +214,16 @@ static int execute_request(
                     //TODO: send signature error response
                     return 0;
                 }
-                //TODO: pass length of encrypted message instead of this
-                size_t encryptedLen = strlen(msg->privateMsg.message);
-                int res = insert_msg(state->db,(char*)msg->privateMsg.sender,(char*)msg->privateMsg.receiver,(char*)msg->privateMsg.message,encryptedLen,CMD_PRIVATE_MSG, (char*)msg->sig);
+
+
+                int res = insert_msg(state->db,(char*)msg->privateMsg.sender,(char*)msg->privateMsg.receiver,(char*)msg->privateMsg.message,msg->privateMsg.len,CMD_PRIVATE_MSG, (char*)msg->sig);
                 if(res == SQLITE_DONE){
                     notify_workers(state);
                     return 0;
                 } else {
-                    //printf("TODO: send user does not exist\n");
                     return send_response(state->api.fd,USER_NOT_FOUND,NULL, state->ssl);
-
-
                 }
             } else {
-                //printf("TODO: send not logged in message to client\n");
                 return send_response(state->api.fd,CMD_NOT_AVAILABLE,NULL, state->ssl);
 
             }
@@ -235,9 +231,7 @@ static int execute_request(
             if(!state->logged){
                 //check username and password meet the requirements
                 if(!(check_length((char*)msg->auth.username,MIN_USR_LENGTH,MAX_USR_LENGTH))){
-                    //printf("TODO: send length error to user\n");
                     return send_response(state->api.fd,INVALID_USR_LEN,NULL, state->ssl);
-
                 }
                 if(!(check_length((char*)msg->auth.password,MIN_PASS_LENGTH,MAX_PASS_LENGTH))){
                     return send_response(state->api.fd,INVALID_PSW_LEN,NULL, state->ssl);
@@ -365,6 +359,48 @@ static int execute_request(
                 }
                 return 0;
             }
+
+        case AES_KEY_INSERT:
+            if(state->logged){
+                if(!(check_length((char*)msg->keyExchange.key,2,MAX_MESSAGE_LENGTH))){
+                    //printf("TODO: send message length error\n");
+                    return 0;
+                }
+                if(!(check_length((char*)msg->keyExchange.receiver,MIN_USR_LENGTH,MAX_USR_LENGTH)) ){
+                    return send_response(state->api.fd,USER_NOT_FOUND,NULL, state->ssl);
+                }
+                //check sender's username matches
+                if(strncmp(state->username,msg->keyExchange.sender,MAX_USR_LENGTH)!=0){
+                    printf("TODO: send username does not match\n");
+                    return 0;
+                }
+
+                if(verify_sig(msg,msg->keyExchange.sender) != 0){
+                    //TODO: send signature error response
+                    return 0;
+                }
+                //check sender's username matches
+                if(strncmp(state->username,msg->keyExchange.sender,MAX_USR_LENGTH)!=0){
+                    printf("TODO: send username does not match\n");
+                    return 0;
+                }
+                int res = insert_key(state->db,(char*)msg->keyExchange.sender,(char*)msg->keyExchange.receiver,(char*)msg->keyExchange.key,msg->keyExchange.keyLen,(char*)msg->keyExchange.iv,(char*)msg->sig);
+                if(res == SQLITE_DONE){
+                    //notify_workers(state);
+                    printf("aes key added successfully.\n");
+                    send_response(state->api.fd,KEY_INSERT_SUCCESSFUL,(char*)msg->keyExchange.receiver, state->ssl);
+                    return 0;
+                } else if(res == SQLITE_CONSTRAINT){
+                    send_response(state->api.fd,KEY_ALREADY_EXISTS,(char*)msg->keyExchange.receiver, state->ssl);
+                    return 0;
+                } else
+                    return send_response(state->api.fd,KEY_NOT_FOUND,(char*)msg->keyExchange.receiver, state->ssl);
+
+            } else {
+                return send_response(state->api.fd,CMD_NOT_AVAILABLE,NULL, state->ssl);
+
+            }
+        case AES_KEY_REQUEST:
         case SERVER_RESPONSE:
             //should not happen?
         default:

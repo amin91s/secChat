@@ -141,11 +141,47 @@ static int client_process_command(struct client_state *state)
         remove_trailing_space(temp, strlen(temp));
         state->ui.cmd = CMD_PRIVATE_MSG;
         struct api_msg msg;
-        memset(&msg, 0, sizeof(msg));
+        memset(&msg, 0, sizeof(struct api_msg));
         msg.type = CMD_PRIVATE_MSG;
         memcpy(msg.privateMsg.sender,state->username,MAX_USR_LENGTH);
         memcpy(msg.privateMsg.message, temp, strlen(temp) + 1);
         memcpy(msg.privateMsg.receiver, receiver, recUsrLen);
+
+
+        unsigned char *outbuff = calloc(1, MAX_MESSAGE_LENGTH);
+        int encLen;
+        int r = aes_enc(msg.privateMsg.sender,state->ui.password,msg.privateMsg.receiver,(unsigned char*)msg.privateMsg.message,outbuff,&encLen);
+        if(r == 1){
+            if(receiver_exists(msg.privateMsg.receiver)){
+                // generate AES key
+                printf("generating AES key for user %s\n",msg.privateMsg.receiver);
+                r = generate_symm_key(state->username,state->ui.password,msg.privateMsg.receiver);
+                if(r == 0){
+                    if(send_key(state->api.fd,msg.privateMsg.sender,state->ui.password,msg.privateMsg.receiver,state->ssl,state->evpKey) != 0){
+                        free(outbuff);
+                        return 0;
+                    }
+                    aes_enc(msg.privateMsg.sender,state->ui.password,msg.privateMsg.receiver,(unsigned char*)msg.privateMsg.message,outbuff,&encLen);
+                } else{
+                    //could not generate aes key (error is already printed)
+                    free(outbuff);
+                    return 0;
+                }
+            } else{
+                printf("error: user not found\n");
+                free(outbuff);
+                return 0;
+
+            }
+        }
+
+        memset(&msg.privateMsg.message, 0, sizeof(msg.privateMsg.message));
+        memcpy(msg.privateMsg.message, outbuff, sizeof(msg.privateMsg.message));
+        msg.privateMsg.len = encLen;
+        //TODO: change after implementing key exchange
+        //printf("enclen = %d\n",encLen);
+        free(outbuff);
+
         sign(&msg,state->evpKey);
         return (api_send(state->api.fd,&msg,state->ssl));
 
@@ -310,6 +346,27 @@ static int client_process_command(struct client_state *state)
         memcpy(msg.publicMsg.message, temp, strlen(temp) + 1);
 
         sign(&msg,state->evpKey);
+/*
+        //unsigned char *outbuff2 = calloc(1, MAX_MESSAGE_LENGTH);
+        //aes_dec(state->username,state->ui.password,state->username,outbuff,outbuff2,&encLen);
+
+        X509 *usrcert = X509_new();
+        get_cert(usrcert,(char*)"amin");
+
+        unsigned char *out = NULL;
+        rsa_enc2(usrcert,(unsigned char*)msg.publicMsg.message,&out);
+//        rsa_enc(usrcert, (unsigned char*)msg.publicMsg.message, &out);
+//
+        unsigned char *decText = NULL;
+        rsa_dec(state->evpKey,out,&decText);
+        printf("decrypted msg: %s.",decText);
+        if(out) free(out);
+        free(decText);
+        X509_free(usrcert);
+
+*/
+
+
         return (api_send(state->api.fd,&msg,state->ssl));
     }
   }
@@ -342,15 +399,23 @@ static int execute_request(
         printf("signature for received message is incorrect. dropping...\n");
         return 0;
     }
-
     printf("%s %s: %s", msg->time, msg->publicMsg.sender, msg->publicMsg.message);
   } else if(msg->type == CMD_PRIVATE_MSG){
       if(verify_sig(msg,msg->privateMsg.sender) != 0){
           printf("signature for received message is incorrect. dropping...\n");
           return 0;
       }
+      unsigned char *out = calloc(1, MAX_MESSAGE_LENGTH);
+      if(aes_dec(msg->privateMsg.receiver,state->ui.password,msg->privateMsg.sender,(unsigned char*)msg->privateMsg.message,out,&msg->privateMsg.len) == 0){
+        printf("%s %s: @%s %s", msg->time, msg->privateMsg.sender,msg->privateMsg.receiver, out);
+        free(out);
+        return 0;
+      } else {
+          printf("could not decrypt private msg from %s.\nmsg dropped...\n",msg->privateMsg.sender);
+          free(out);
+          return 0;
+      }
 
-      printf("%s %s: @%s %s", msg->time, msg->privateMsg.sender,msg->privateMsg.receiver, msg->privateMsg.message);
   } else if(msg->type == SERVER_RESPONSE){
       switch (msg->serverResponse.response) {
           case REG_SUCCESSFUL:
@@ -403,6 +468,18 @@ static int execute_request(
               return 0;
           case ALREADY_LOGGED_IN:
               printf("error: command not currently available\n");
+              return 0;
+          case KEY_ALREADY_EXISTS:
+              if(check_length((char*)msg->serverResponse.message,MIN_USR_LENGTH,MAX_USR_LENGTH))
+                  printf("error: AES key for user '%s' already exists\n",msg->serverResponse.message);
+              return 0;
+          case KEY_NOT_FOUND:
+              if(check_length((char*)msg->serverResponse.message,MIN_USR_LENGTH,MAX_USR_LENGTH))
+                  printf("error: AES key for user '%s' was not found in the database\n",msg->serverResponse.message);
+              return 0;
+          case KEY_INSERT_SUCCESSFUL:
+              if(check_length((char*)msg->serverResponse.message,MIN_USR_LENGTH,MAX_USR_LENGTH))
+                  printf("AES key for user '%s' added to the database\n",msg->serverResponse.message);
               return 0;
       }
   } else if (msg->type == CMD_USERS){
