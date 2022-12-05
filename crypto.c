@@ -165,7 +165,7 @@ int verify_sig(struct api_msg* msg, char *usr){
     EVP_VerifyInit(ctx, EVP_sha256());
     EVP_VerifyUpdate(ctx,msg,sizeof(struct api_msg));
     int r = EVP_VerifyFinal(ctx, temp,SIG_LENGTH , pubkey);
-    printf("signature is %s\n", (r == 1) ? "good" : "bad");
+    //printf("signature is %s\n", (r == 1) ? "good" : "bad");
     //printf("common name: %s\n", commonName);
     EVP_MD_CTX_free(ctx);
 

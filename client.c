@@ -391,10 +391,6 @@ static int execute_request(
 {
   if (msg->type == CMD_PUBLIC_MSG)
   {
-    //const struct public_msg *temp =  &msg->publicMsg;
-    //printf("%s %s: %s", msg->time, temp->sender, temp->message);
-
-
     //todo: changed const struct to struct. figure out later
 
     if(verify_sig(msg,msg->publicMsg.sender) != 0){
@@ -434,26 +430,29 @@ static int execute_request(
           }
 
           insert_node(state->decList,temp);
-          print_list(state->decList);
+          //print_list(state->decList);
           free(out);
           return 0;
       }
 
   } else if(msg->type == AES_KEY_REQUEST){
-      printf("received key,iv.\nsender:%s.\nreceiver:%s.\niv:",msg->keyExchange.sender,msg->keyExchange.receiver);
-      printHex(IV_LEN,msg->keyExchange.iv);
-      //change type to verify
-//      msg->type = AES_KEY_INSERT;
-//      if(verify_sig(msg,msg->keyExchange.sender) != 0){
-//          printf("signature for received AES is incorrect.\ndropping %d messages from user '%s'\n",remove_msgs_from_user(state->decList,msg->keyExchange.sender),msg->keyExchange.sender);
-//          printf("sig: ");
-//          printHex(SIG_LENGTH,msg->sig);
-//          return 0;
-//      }
+      //verifying the key
+      struct api_msg temp;
+      memset(&temp,0, sizeof(temp));
+      memcpy(&temp,msg, sizeof(*msg));
+      temp.type = AES_KEY_INSERT;
+      memset(&temp.keyExchange.sender,0,MAX_USR_LENGTH+1);
+      memset(&temp.keyExchange.receiver,0,MAX_USR_LENGTH+1);
+      memcpy(&temp.keyExchange.sender,msg->keyExchange.receiver,MAX_USR_LENGTH+1);
+      memcpy(&temp.keyExchange.receiver,msg->keyExchange.sender,MAX_USR_LENGTH+1);
+
+
+      if((verify_sig(&temp,temp.keyExchange.sender) != 0) && (verify_sig(&temp,temp.keyExchange.receiver))){
+          printf("signature for received AES is incorrect.\ndropping %d messages from user '%s'\n",remove_msgs_from_user(state->decList,msg->keyExchange.sender),msg->keyExchange.sender);
+          return 0;
+      }
       unsigned char *plaintext = NULL;
       if(rsa_dec(state->evpKey,(unsigned char*)msg->keyExchange.key,&plaintext) == 0){
-        printf("decrypted key: ");
-        printHex(SYMM_KEY_LEN,plaintext);
         if(write_aes_key(msg->keyExchange.receiver,state->ui.password,msg->keyExchange.sender,plaintext, msg->keyExchange.iv) != -1){
                 printf("decrypted %d queued messages from user '%s'.\n",dec_msgs_from_user(state->decList,msg->keyExchange.receiver,msg->keyExchange.sender,state->ui.password),msg->keyExchange.receiver);
         }
