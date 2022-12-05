@@ -11,7 +11,7 @@
 #define CIPHER_TYPE EVP_aes_128_cbc()
 #define SYMM_KEY_LEN EVP_CIPHER_key_length(CIPHER_TYPE)
 #define IV_LEN EVP_CIPHER_iv_length(CIPHER_TYPE)
-
+#define RSA_KEY_SIZE 256
 
 #include "api.h"
 #include "cmd.h"
@@ -31,4 +31,7 @@ int rsa_enc(X509 *usrcert, unsigned char *inbuf, unsigned char **outbuf);
 int rsa_dec(EVP_PKEY *key, unsigned char *inbuf, unsigned char **outbuf);
 int rsa_enc2(X509 *usrcert, unsigned char *inbuf, unsigned char **outbuf);
 int send_key(int fd, char *usr, char *pass, char *receiver ,SSL *ssl,  EVP_PKEY *evpKey);
+int request_key(int fd, char *usr, char *receiver ,SSL *ssl,  EVP_PKEY *evpKey);
+int write_aes_key(char *usr, char *pass, char *receiver, unsigned char *key, unsigned char *iv);
+
 #endif

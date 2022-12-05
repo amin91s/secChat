@@ -27,6 +27,7 @@ struct client_state
   SSL_CTX *ctx;
   SSL *ssl;
   EVP_PKEY *evpKey;
+  LinkedList *decList;
 };
 
 /**
@@ -148,7 +149,7 @@ static int client_process_command(struct client_state *state)
         memcpy(msg.privateMsg.receiver, receiver, recUsrLen);
 
 
-        unsigned char *outbuff = calloc(1, MAX_MESSAGE_LENGTH);
+        unsigned char *outbuff = calloc(1, MAX_MESSAGE_LENGTH+1);
         int encLen;
         int r = aes_enc(msg.privateMsg.sender,state->ui.password,msg.privateMsg.receiver,(unsigned char*)msg.privateMsg.message,outbuff,&encLen);
         if(r == 1){
@@ -176,13 +177,14 @@ static int client_process_command(struct client_state *state)
         }
 
         memset(&msg.privateMsg.message, 0, sizeof(msg.privateMsg.message));
-        memcpy(msg.privateMsg.message, outbuff, sizeof(msg.privateMsg.message));
+        memcpy(&msg.privateMsg.message, outbuff, sizeof(msg.privateMsg.message));
         msg.privateMsg.len = encLen;
         //TODO: change after implementing key exchange
         //printf("enclen = %d\n",encLen);
         free(outbuff);
 
         sign(&msg,state->evpKey);
+        verify_sig(&msg,state->username);
         return (api_send(state->api.fd,&msg,state->ssl));
 
 
@@ -403,18 +405,62 @@ static int execute_request(
   } else if(msg->type == CMD_PRIVATE_MSG){
       if(verify_sig(msg,msg->privateMsg.sender) != 0){
           printf("signature for received message is incorrect. dropping...\n");
+          printHex(SIG_LENGTH,msg->sig);
           return 0;
       }
       unsigned char *out = calloc(1, MAX_MESSAGE_LENGTH);
-      if(aes_dec(msg->privateMsg.receiver,state->ui.password,msg->privateMsg.sender,(unsigned char*)msg->privateMsg.message,out,&msg->privateMsg.len) == 0){
+      int r;
+      if(strcmp(msg->privateMsg.sender,state->ui.username) == 0){
+         r = aes_dec(msg->privateMsg.sender,state->ui.password,msg->privateMsg.receiver,(unsigned char*)msg->privateMsg.message,out,&msg->privateMsg.len);
+      } else{
+         r = aes_dec(msg->privateMsg.receiver,state->ui.password,msg->privateMsg.sender,(unsigned char*)msg->privateMsg.message,out,&msg->privateMsg.len);
+      }
+      if(r == 0){
         printf("%s %s: @%s %s", msg->time, msg->privateMsg.sender,msg->privateMsg.receiver, out);
         free(out);
         return 0;
       } else {
-          printf("could not decrypt private msg from %s.\nmsg dropped...\n",msg->privateMsg.sender);
+          printf("could not decrypt private msg from %s.\nmsg added to decrypt list...\n",msg->privateMsg.sender);
+          struct api_msg *temp = calloc(1, sizeof(struct api_msg));
+          memcpy(temp, msg, sizeof(struct api_msg));
+          insert_node(state->decList,temp);
+          print_list(state->decList);
+          //send key request to the server
+          if(strcmp(msg->privateMsg.sender,state->ui.username) == 0){
+              request_key(state->api.fd,msg->privateMsg.sender,msg->privateMsg.receiver,state->ssl,state->evpKey);
+          } else {
+              request_key(state->api.fd,msg->privateMsg.receiver,msg->privateMsg.sender,state->ssl,state->evpKey);
+          }
+
           free(out);
           return 0;
       }
+
+  } else if(msg->type == AES_KEY_REQUEST){
+      printf("received key,iv.\nsender:%s.\nreceiver:%s.\niv:",msg->keyExchange.sender,msg->keyExchange.receiver);
+      printHex(IV_LEN,msg->keyExchange.iv);
+      //change type to verify
+//      msg->type = AES_KEY_INSERT;
+//      if(verify_sig(msg,msg->keyExchange.sender) != 0){
+//          printf("signature for received AES is incorrect.\ndropping %d messages from user '%s'\n",remove_msgs_from_user(state->decList,msg->keyExchange.sender),msg->keyExchange.sender);
+//          printf("sig: ");
+//          printHex(SIG_LENGTH,msg->sig);
+//          return 0;
+//      }
+      unsigned char *plaintext = NULL;
+      if(rsa_dec(state->evpKey,(unsigned char*)msg->keyExchange.key,&plaintext) == 0){
+        printf("decrypted key: ");
+        printHex(SYMM_KEY_LEN,plaintext);
+        if(write_aes_key(msg->keyExchange.receiver,state->ui.password,msg->keyExchange.sender,plaintext, msg->keyExchange.iv) != -1){
+            printf("decrypted %d queued messages from user '%s'.\n",dec_msgs_from_user(state->decList,msg->keyExchange.sender,msg->keyExchange.receiver,state->ui.password),msg->keyExchange.sender);
+        }
+          } else{
+          printf("could not decrypt aes key\ndropping %d messages from '%s'\n",remove_msgs_from_user(state->decList,msg->keyExchange.sender),msg->keyExchange.sender);
+          if(plaintext) free(plaintext);
+          return 0;
+      }
+      if(plaintext) free(plaintext);
+      return 0;
 
   } else if(msg->type == SERVER_RESPONSE){
       switch (msg->serverResponse.response) {
@@ -480,6 +526,10 @@ static int execute_request(
           case KEY_INSERT_SUCCESSFUL:
               if(check_length((char*)msg->serverResponse.message,MIN_USR_LENGTH,MAX_USR_LENGTH))
                   printf("AES key for user '%s' added to the database\n",msg->serverResponse.message);
+              return 0;
+          case USER_DOES_NOT_MATCH:
+              if(check_length((char*)msg->serverResponse.message,MIN_USR_LENGTH,MAX_USR_LENGTH))
+                  printf("user '%s' does not match the current user\n",msg->serverResponse.message);
               return 0;
       }
   } else if (msg->type == CMD_USERS){
@@ -599,6 +649,8 @@ static int client_state_init(struct client_state *state)
       printf("could not allocate EVP_PKEY structure\n");
       return 1;
   }
+  state->decList = init_list();
+
   //already set to 0 by memset?
   state->logged = 0;
 
@@ -619,7 +671,8 @@ static void client_state_free(struct client_state *state){
 
     /* cleanup UI state */
     ui_state_free(&state->ui);
-
+    list_free(state->decList);
+    if(state->decList) free(state->decList);
     memset(state, 0, sizeof(*state));
 }
 

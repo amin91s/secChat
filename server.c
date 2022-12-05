@@ -344,7 +344,7 @@ static int server_state_init(struct server_state *state, sqlite3 *db)
     return -1;
   }
 
-  res_create = sqlite3_exec(db,"CREATE TABLE IF NOT EXISTS keys(user1 TEXT NOT NULL, user2 TEXT NOT NULL, key text NOT NULL, iv TEXT NOT NULL UNIQUE, signature text NOT NULL, unique (user1, user2))",NULL,NULL,NULL);
+  res_create = sqlite3_exec(db,"CREATE TABLE IF NOT EXISTS keys(user1 TEXT NOT NULL, user2 TEXT NOT NULL, key text NOT NULL UNIQUE, iv TEXT NOT NULL, signature text NOT NULL, unique (user1, user2))",NULL,NULL,NULL);
 
   if (res_create != 0)
     {

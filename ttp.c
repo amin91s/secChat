@@ -210,12 +210,14 @@ int get_cert(X509 *usrcert, char *usr){
     fclose(path);
     if(!fileExists(buf)){
         printf("user does not exist\n");
+        X509_free(cacert);
         return 1;
     }
     path = NULL;
     path = fopen(buf,"r");
     if(path == NULL){
         printf("could not load user's cert\n");
+        X509_free(cacert);
         return -1;
     }
     usrcert = PEM_read_X509(path, &usrcert, NULL, NULL);
@@ -224,11 +226,12 @@ int get_cert(X509 *usrcert, char *usr){
 
     if(r != 1){
         printf("certificate is not correctly signed by CA\n");
+        X509_free(cacert);
         fclose(path);
         return -1;
     }
 
-
+    X509_free(cacert);
     fclose(path);
     return 0;
 }

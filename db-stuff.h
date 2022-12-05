@@ -70,7 +70,53 @@ int get_credentials(sqlite3 *db, char *username,unsigned char *hash,unsigned cha
     if (db) sqlite3_close(db);
     return res;
 }
+//returns 0 if key is not in db, 1 otherwise
+int get_key(sqlite3 *db,char *sender,char *receiver, char *key, char *iv, char *sig){
+    int r = sqlite3_open("chat.db", &db);
+    if(r != SQLITE_OK){
+        fprintf(stderr, "Error opening database: %s \n", sqlite3_errmsg(db));
+        sqlite3_close(db);
+        return -1;
+    }
+//    char *usr1, *usr2;
+//    if(strcmp(sender,receiver) >= 1){
+//        usr1 = receiver;
+//        usr2 = sender;
+//    }
+//    else{
+//        usr1 = sender;
+//        usr2 = receiver;
+//    }
 
+    sqlite3_busy_timeout(db, 2000 );
+    sqlite3_stmt *stmt = NULL;
+    int res=-1;
+
+    char *sql = "select iv,key,signature from keys where user1 = @usr1 AND user2 = @usr2;";
+    if((r = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL)) != SQLITE_OK) goto cleanup;
+
+    if((r = sqlite3_bind_text(stmt, 1,sender ,-1 , SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
+    if((r = sqlite3_bind_text(stmt, 2,receiver ,-1 , SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
+
+    r = sqlite3_step(stmt);
+    if(r == SQLITE_ROW){
+        //key exists
+        memcpy(iv,(char*)sqlite3_column_text(stmt, 0),IV_LEN);
+        memcpy(key,(char*)sqlite3_column_text(stmt, 1),RSA_KEY_SIZE);
+        memcpy(sig,(char*)sqlite3_column_text(stmt, 2),SIG_LENGTH);
+        res = 1;
+    } else if(r == SQLITE_DONE){
+        res = 0;
+    }
+    cleanup:
+    if (r != SQLITE_OK && r != SQLITE_DONE && r != SQLITE_ROW)
+        fprintf(stderr, "database error: %s\n",sqlite3_errmsg(db));
+    if (stmt) sqlite3_finalize(stmt);
+    if (db) sqlite3_close(db);
+    return res;
+
+
+}
 int insert_msg(sqlite3 *db,char *sender,char *receiver, char *message, int encrypted_msg_len, int msg_type, char *sig){
     int r = sqlite3_open("chat.db", &db);
     if(r != SQLITE_OK){
@@ -170,22 +216,22 @@ int insert_key(sqlite3 *db,char *sender,char *receiver, char *key, int enc_len, 
         sqlite3_close(db);
         return -1;
     }
-    char *usr1, *usr2;
-    if(strcmp(sender,receiver) >= 1){
-        usr1 = receiver;
-        usr2 = sender;
-    }
-    else{
-        usr1 = sender;
-        usr2 = receiver;
-    }
+//    char *usr1, *usr2;
+//    if(strcmp(sender,receiver) >= 1){
+//        usr1 = receiver;
+//        usr2 = sender;
+//    }
+//    else{
+//        usr1 = sender;
+//        usr2 = receiver;
+//    }
 
     sqlite3_busy_timeout(db, 2000 );
     sqlite3_stmt *stmt = NULL;
     char *sql = "insert into keys (user1, user2, key, signature, iv) values (?1,?2,?3,?4,?5);";
     if((r = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL)) != SQLITE_OK) goto cleanup;
-    if((r= sqlite3_bind_text(stmt, 1, usr1, -1, SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
-    if((r= sqlite3_bind_text(stmt, 2, usr2, -1, SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
+    if((r= sqlite3_bind_text(stmt, 1, sender, -1, SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
+    if((r= sqlite3_bind_text(stmt, 2, receiver, -1, SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
     if((r= sqlite3_bind_text(stmt, 3, key, enc_len , SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
     if((r= sqlite3_bind_text(stmt, 4, sig, SIG_LENGTH, SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
     if((r= sqlite3_bind_text(stmt, 5, iv, IV_LEN , SQLITE_STATIC)) != SQLITE_OK) goto cleanup;

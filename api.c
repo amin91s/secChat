@@ -100,6 +100,7 @@ void set_time(char *temp)
 
 int send_response(int fd,enum response r,char *text, SSL *ssl){
     struct api_msg msg;
+    memset(&msg, 0, sizeof(msg));
     msg.type=SERVER_RESPONSE;
     set_time(msg.time);
     msg.serverResponse.response = r;

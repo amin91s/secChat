@@ -92,7 +92,6 @@ int validate_clientkey_access(char *usr, char *pass){
         free(hash);
         return -1;
     }
-
     FILE *fp;
     char path[256];
     memset(path,0,256);
@@ -133,4 +132,188 @@ int fileExists(const char *filename){
     struct stat buffer;
     return (stat(filename,&buffer) == 0);
 
+}
+
+
+LinkedList* init_list(void){
+    LinkedList *list = malloc(sizeof(LinkedList)) ;
+    list->head = NULL ;
+    list->tail = NULL ;
+    //test_list(list);
+    return list ;
+}
+int is_empty(LinkedList *list) {
+    return (list->head == NULL) && (list->tail == NULL);
+}
+void insert_node(LinkedList *list, void *data){
+    QNode *newNode =  malloc(sizeof(struct QNode));
+    newNode->data = data;
+    newNode->next = NULL;
+    // list is empty.new node is head and tail.
+    if(is_empty(list)){
+        newNode->prev = NULL;
+        list->head = newNode;
+        list->tail = newNode;
+    } else {
+        newNode->prev = list->tail;
+        list->tail->next = newNode;
+        list->tail = newNode;
+    }
+}
+QNode* get_node(LinkedList *list, char *name){
+    if(is_empty(list)) {
+        return NULL;
+    } else {
+        QNode *temp = list->head;
+        while(temp){
+            struct api_msg *msg = temp->data;//should i cast here??
+            if(strncmp(name, msg->privateMsg.sender, MAX_USR_LENGTH) == 0) {
+                return temp;
+            }
+            temp = temp->next;
+        }
+        return NULL;
+    }
+}
+
+int remove_node(LinkedList *list, QNode *node){
+    if(is_empty(list)) {
+        return 1;
+    } else {
+        if(list->head == node)
+            list->head = node->next;
+        if(list->tail == node)
+            list->tail = node->prev;
+        if(node->next != NULL)
+            node->next->prev = node->prev;
+        if(node->prev != NULL)
+            node->prev->next = node->next;
+        free(node->data);
+        free(node);
+        return 0;
+    }
+
+}
+
+void print_list(LinkedList *list){
+    if(is_empty(list)) {
+        return;
+    } else {
+        printf("print_list:\n");
+        QNode *temp = list->head;
+        while (temp){
+            if(temp->data){
+                struct api_msg *msg = temp->data;
+                printf("private msg from: '%s'\n", msg->privateMsg.sender);
+            }
+            temp = temp->next;
+        }
+    }
+}
+
+void list_free(LinkedList *list){
+    if(!list) return;
+    QNode *curr = list->head;
+    QNode *next = NULL;
+    while(curr){
+        next = curr->next;
+        if(curr->data)
+            free(curr->data);
+        free(curr);
+        curr = next;
+    }
+}
+//todo:test list functionality and memory leaks. remove this later
+void test_list(LinkedList *list){
+    printf("test list\n");
+    printf("list is empty: %d\n", is_empty(list));
+    struct api_msg *msg = calloc(1, sizeof(struct api_msg));
+    msg->type = CMD_PRIVATE_MSG;
+    strncpy(msg->privateMsg.sender,"LTS1",MAX_USR_LENGTH);
+    strncpy(msg->privateMsg.receiver,"LTR1",MAX_USR_LENGTH);
+    insert_node(list,msg);
+    struct api_msg *msg2 = calloc(1, sizeof(struct api_msg));
+    msg2->type = CMD_PRIVATE_MSG;
+    strncpy(msg2->privateMsg.sender,"LTS2",MAX_USR_LENGTH);
+    strncpy(msg2->privateMsg.receiver,"LTR2",MAX_USR_LENGTH);
+    insert_node(list,msg2);
+    print_list(list);
+    printf("getting node with user LTS2\n");
+    QNode *temp = get_node(list,"LTS2");
+    printf("node returned: %s\n",((struct api_msg*)temp->data)->privateMsg.sender);
+    printf("removing LTS2\n");
+    remove_node(list, temp);
+    print_list(list);
+    printf("removing LTS1\n");
+    temp = get_node(list,"LTS1");
+    remove_node(list, temp);
+    printf("list is empty: %d\n", is_empty(list));
+    print_list(list);
+    struct api_msg *msg3 = calloc(1, sizeof(struct api_msg));
+    msg3->type = CMD_PRIVATE_MSG;
+    strncpy(msg3->privateMsg.sender,"LTS3",MAX_USR_LENGTH);
+    strncpy(msg3->privateMsg.receiver,"LTR3",MAX_USR_LENGTH);
+    struct api_msg *msg4 = calloc(1, sizeof(struct api_msg));
+    msg4->type = CMD_PRIVATE_MSG;
+    strncpy(msg4->privateMsg.sender,"LTS3",MAX_USR_LENGTH);
+    strncpy(msg4->privateMsg.receiver,"LTR3",MAX_USR_LENGTH);
+    struct api_msg *msg5 = calloc(1, sizeof(struct api_msg));
+    msg5->type = CMD_PRIVATE_MSG;
+    strncpy(msg5->privateMsg.sender,"LTS3",MAX_USR_LENGTH);
+    strncpy(msg5->privateMsg.receiver,"LTR3",MAX_USR_LENGTH);
+    insert_node(list,msg3);
+    insert_node(list,msg4);
+    insert_node(list,msg5);
+    print_list(list);
+    printf("removing all msgs from LTS3\nremoved %d messages.\n",remove_msgs_from_user(list,"LTS3"));
+    print_list(list);
+    printf("list is empty: %d\n", is_empty(list));
+    printf("test done\n");
+
+}
+
+int remove_msgs_from_user(LinkedList *list, char *name){
+    if(is_empty(list)) {
+        return -1;
+    } else {
+        int r = 0;
+        QNode *node = get_node(list,name);
+        while (node){
+            remove_node(list, node);
+            r++;
+            node = get_node(list,name);
+        }
+        return r;
+    }
+}
+
+
+int dec_msgs_from_user(LinkedList *list, char *sender, char *username, char *password){
+    if(is_empty(list)) {
+        return 0;
+    } else {
+        int ret = 0;
+        QNode *node = get_node(list,sender);
+        while (node){
+            struct api_msg *msg = node->data;
+            unsigned char *out = calloc(1, MAX_MESSAGE_LENGTH);
+            int r;
+            if(strcmp(msg->privateMsg.sender,username) == 0){
+                r = aes_dec(msg->privateMsg.sender,password,msg->privateMsg.receiver,(unsigned char*)msg->privateMsg.message,out,&msg->privateMsg.len);
+            } else{
+                r = aes_dec(msg->privateMsg.receiver,password,msg->privateMsg.sender,(unsigned char*)msg->privateMsg.message,out,&msg->privateMsg.len);
+            }
+            if(r == 0){
+                printf("%s %s: @%s %s", msg->time, msg->privateMsg.sender,msg->privateMsg.receiver, out);
+                free(out);
+            } else{
+                free(out);
+                return -1;
+            }
+            remove_node(list, node);
+            ret++;
+            node = get_node(list,sender);
+        }
+        return ret;
+    }
 }

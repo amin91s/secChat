@@ -156,6 +156,8 @@ int verify_sig(struct api_msg* msg, char *usr){
     EVP_MD_CTX *ctx = EVP_MD_CTX_create();
     if(!ctx){
         printf("could not crate ctx\n");
+        X509_free(usrcert);
+        free(commonName);
         return -1;
     }
 
@@ -163,8 +165,8 @@ int verify_sig(struct api_msg* msg, char *usr){
     EVP_VerifyInit(ctx, EVP_sha256());
     EVP_VerifyUpdate(ctx,msg,sizeof(struct api_msg));
     int r = EVP_VerifyFinal(ctx, temp,SIG_LENGTH , pubkey);
-    //printf("signature is %s\n", (r == 1) ? "good" : "bad");
-
+    printf("signature is %s\n", (r == 1) ? "good" : "bad");
+    //printf("common name: %s\n", commonName);
     EVP_MD_CTX_free(ctx);
 
     free(commonName);
@@ -202,11 +204,13 @@ int generate_symm_key(char *usr, char *pass, char *receiver){
 
     if(validate_clientkey_access(usr,pass) == 0){
         unsigned char key[SYMM_KEY_LEN], iv[(IV_LEN)];
+        memset(key,0,SYMM_KEY_LEN);
+        memset(iv,0,IV_LEN);
         if( RAND_bytes(key,SYMM_KEY_LEN) != 1){
             printf("could not generate Symmetric-key\n");
             return -1;
         }
-        if( RAND_bytes(key,IV_LEN) != 1){
+        if( RAND_bytes(iv,IV_LEN) != 1){
             printf("could not generate IV\n");
             return -1;
         }
@@ -346,7 +350,7 @@ int aes_dec(char *receiver , char *pass, char *sender, unsigned char *ciphertext
     int temp_enc_len = *enc_len;
     int r;
 
-    if((r = get_aes_key(sender,pass,receiver,(unsigned char*)key,(unsigned char*)iv)) == 0){
+    if((r = get_aes_key(receiver,pass,sender,(unsigned char*)key,(unsigned char*)iv)) == 0){
         EVP_CIPHER_CTX *ctx;
         if(!(ctx = EVP_CIPHER_CTX_new())){
             ERR_print_errors_fp(stdout);
@@ -414,9 +418,10 @@ int get_aes_key(char *usr, char *pass, char *receiver, unsigned char *key, unsig
             fclose(fp);
             return -1;
         }
+        fclose(fp);
         memset(path,0,256);
         snprintf(path,256,"clientkeys/%s/%s-iv.dat",usr,receiver);
-        fclose(fp);
+
         fp = fopen(path,"rb");
         if(fp == NULL) {
             printf("file can't be opened\n");
@@ -427,6 +432,7 @@ int get_aes_key(char *usr, char *pass, char *receiver, unsigned char *key, unsig
             fclose(fp);
             return -1;
         }
+        fclose(fp);
         return 0;
     }
 
@@ -434,6 +440,73 @@ int get_aes_key(char *usr, char *pass, char *receiver, unsigned char *key, unsig
 }
 
 
+/**
+ *  * @return   0  on success, 1 if key does already exist , -1 on error
+ */
+int write_aes_key(char *usr, char *pass, char *receiver, unsigned char *key, unsigned char *iv){
+    assert(usr);
+    assert(pass);
+    assert(receiver);
+    assert(key);
+    assert(iv);
+    if(!check_length(usr,MIN_USR_LENGTH,MAX_USR_LENGTH)){
+        printf("incorrect username length\n");
+        return -1;
+    }
+    if(!check_length(pass, MIN_PASS_LENGTH,MAX_PASS_LENGTH)){
+        printf("incorrect password length\n");
+        return -1;
+    }
+    if(!check_length(receiver,MIN_USR_LENGTH,MAX_USR_LENGTH)){
+        printf("incorrect receiver length\n");
+        return -1;
+    }
+    ///todo: implement validatePath(usrname) && validatepath(receiver); and move above lines there + goto cleanup
+
+    if(validate_clientkey_access(usr,pass) == 0){
+        char path[256];
+        memset(path, 0, 256);
+        snprintf(path,256,"clientkeys/%s/%s-key.dat",usr,receiver);
+        //check if key already exists
+        if(fileExists(path)){
+            printf("key already exists\n");
+            return 1;
+        }
+
+        FILE *fp;
+        fp = fopen(path,"wb");
+        if(fp == NULL) {
+            printf("file can't be opened\n");
+            return -1;
+        }
+        if(fwrite(key,1,SYMM_KEY_LEN,fp) <= 0){
+            printf("could not write Symmetric-key to file\n");
+            fclose(fp);
+            return -1;
+        }
+        memset(path,0,256);
+        snprintf(path,256,"clientkeys/%s/%s-iv.dat",usr,receiver);
+        fclose(fp);
+        fp = fopen(path,"wb");
+        if(fp == NULL) {
+            printf("file can't be opened\n");
+            return -1;
+        }
+        if(fwrite(iv,1,IV_LEN,fp) <= 0){
+            printf("could not write IV to file\n");
+            //todo: remove key if needed.
+            fclose(fp);
+            return -1;
+        }
+        fclose(fp);
+        return 0;
+    }
+
+    return -1;
+
+
+
+}
 int rsa_enc(X509 *usrcert, unsigned char *inbuf, unsigned char **outbuf){
     assert(usrcert);
     assert(inbuf);
@@ -463,8 +536,13 @@ int rsa_dec(EVP_PKEY *key, unsigned char *inbuf, unsigned char **outbuf){
     RSA *privKey = EVP_PKEY_get0_RSA(key);
     int inlen = RSA_size(privKey);
     *outbuf = calloc(RSA_size(privKey), sizeof(unsigned char) );
-    RSA_private_decrypt(inlen, inbuf, *outbuf, privKey, RSA_PKCS1_OAEP_PADDING); /* random padding, needs 42 bytes */
-    return 0;
+    int res = RSA_private_decrypt(inlen, inbuf, *outbuf, privKey, RSA_PKCS1_OAEP_PADDING); /* random padding, needs 42 bytes */
+    if(res == SYMM_KEY_LEN)
+        return 0;
+    else{
+        printf("error: rsa_dec length: %d\n",res);
+        return 1;
+    }
 
 }
 
@@ -503,27 +581,67 @@ int rsa_enc2(X509 *usrcert, unsigned char *inbuf, unsigned char **outbuf){
 
 int send_key(int fd, char *usr, char *pass, char *receiver ,SSL *ssl,  EVP_PKEY *evpKey){
     struct api_msg key_msg;
-    key_msg.type = AES_KEY_INSERT;
     memset(&key_msg, 0, sizeof(struct api_msg));
     key_msg.type = AES_KEY_INSERT;
     unsigned char key[SYMM_KEY_LEN], iv[(IV_LEN)];
     memset(key,0,SYMM_KEY_LEN);
     memset(iv,0,IV_LEN);
     get_aes_key(usr,pass,receiver,(unsigned char*)key,(unsigned char*)iv);
-    memcpy(key_msg.keyExchange.sender,usr,MAX_USR_LENGTH);
-    memcpy(key_msg.keyExchange.receiver,receiver,MAX_USR_LENGTH);
+    memcpy(key_msg.keyExchange.sender,receiver,MAX_USR_LENGTH);
+    memcpy(key_msg.keyExchange.receiver,usr,MAX_USR_LENGTH);
     memcpy(key_msg.keyExchange.iv, iv, IV_LEN);
     X509 *usrcert = X509_new();
-    get_cert(usrcert,key_msg.keyExchange.receiver);
+    get_cert(usrcert,key_msg.keyExchange.sender);
     unsigned char *out = NULL;
     key_msg.keyExchange.keyLen = rsa_enc(usrcert, (unsigned char*)key, &out);
-    if(key_msg.keyExchange.keyLen < 1){
+    if(key_msg.keyExchange.keyLen != RSA_KEY_SIZE){
         printf("could not encrypt the aes key\n");
         if(out) free(out);
+        X509_free(usrcert);
         return -1;
     }
     memcpy(key_msg.keyExchange.key,out,key_msg.keyExchange.keyLen);
     sign(&key_msg,evpKey);
     if(out) free(out);
+    X509_free(usrcert);
+    int r = api_send(fd,&key_msg,ssl);
+    if (r == 0 && (strcmp(key_msg.keyExchange.sender,key_msg.keyExchange.receiver) != 0 )){
+        //send key encrypted with our own pub key as well
+        memset(&key_msg, 0, sizeof(struct api_msg));
+        key_msg.type = AES_KEY_INSERT;
+        memcpy(key_msg.keyExchange.sender,usr,MAX_USR_LENGTH);
+        memcpy(key_msg.keyExchange.receiver,receiver,MAX_USR_LENGTH);
+        memcpy(key_msg.keyExchange.iv, iv, IV_LEN);
+        usrcert = X509_new();
+        get_cert(usrcert,key_msg.keyExchange.sender);
+        out = NULL;
+        key_msg.keyExchange.keyLen = rsa_enc(usrcert, (unsigned char*)key, &out);
+        if(key_msg.keyExchange.keyLen != RSA_KEY_SIZE){
+            printf("could not encrypt the aes key\n");
+            if(out) free(out);
+            X509_free(usrcert);
+            return -1;
+        }
+        memcpy(key_msg.keyExchange.key,out,key_msg.keyExchange.keyLen);
+        sign(&key_msg,evpKey);
+        if(out) free(out);
+        X509_free(usrcert);
+        return api_send(fd,&key_msg,ssl);
+    } else return r;
+}
+
+int request_key(int fd, char *usr, char *receiver ,SSL *ssl,  EVP_PKEY *evpKey){
+    assert(fd);
+    assert(usr);
+    assert(receiver);
+    assert(evpKey);
+    assert(ssl);
+
+    struct api_msg key_msg;
+    memset(&key_msg, 0, sizeof(struct api_msg));
+    key_msg.type = AES_KEY_REQUEST;
+    memcpy(key_msg.keyExchange.sender,usr,MAX_USR_LENGTH);
+    memcpy(key_msg.keyExchange.receiver,receiver,MAX_USR_LENGTH);
+    sign(&key_msg,evpKey);
     return api_send(fd,&key_msg,ssl);
 }
