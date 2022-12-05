@@ -167,7 +167,7 @@ QNode* get_node(LinkedList *list, char *name){
         QNode *temp = list->head;
         while(temp){
             struct api_msg *msg = temp->data;//should i cast here??
-            if(strncmp(name, msg->privateMsg.sender, MAX_USR_LENGTH) == 0) {
+            if((strncmp(name, msg->privateMsg.sender, MAX_USR_LENGTH) == 0) || (strncmp(name, msg->privateMsg.receiver, MAX_USR_LENGTH) == 0)) {
                 return temp;
             }
             temp = temp->next;
@@ -288,7 +288,7 @@ int remove_msgs_from_user(LinkedList *list, char *name){
 }
 
 
-int dec_msgs_from_user(LinkedList *list, char *sender, char *username, char *password){
+int dec_msgs_from_user(LinkedList *list, char *sender, char *receiver, char *password){
     if(is_empty(list)) {
         return 0;
     } else {
@@ -298,11 +298,10 @@ int dec_msgs_from_user(LinkedList *list, char *sender, char *username, char *pas
             struct api_msg *msg = node->data;
             unsigned char *out = calloc(1, MAX_MESSAGE_LENGTH);
             int r;
-            if(strcmp(msg->privateMsg.sender,username) == 0){
+            if(strcmp(msg->privateMsg.sender,sender) == 0)
                 r = aes_dec(msg->privateMsg.sender,password,msg->privateMsg.receiver,(unsigned char*)msg->privateMsg.message,out,&msg->privateMsg.len);
-            } else{
+            else
                 r = aes_dec(msg->privateMsg.receiver,password,msg->privateMsg.sender,(unsigned char*)msg->privateMsg.message,out,&msg->privateMsg.len);
-            }
             if(r == 0){
                 printf("%s %s: @%s %s", msg->time, msg->privateMsg.sender,msg->privateMsg.receiver, out);
                 free(out);

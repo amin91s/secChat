@@ -83,12 +83,13 @@ static int handle_s2w_notification(struct worker_state *state)
           usrPtr = (char *)sqlite3_column_text(stmt, 3);
           strncpy(temp.publicMsg.sender, usrPtr, strlen(usrPtr) + 1);
       } else{
-          strncpy(temp.privateMsg.message, msgPtr, strlen(msgPtr) + 1);
+          temp.privateMsg.len = sqlite3_column_int(stmt, 7);
+          memcpy(temp.privateMsg.message, msgPtr, temp.privateMsg.len);
           usrPtr = (char *)sqlite3_column_text(stmt, 3);
           strncpy(temp.privateMsg.sender, usrPtr, strlen(usrPtr) + 1);
           usrPtr = (char *)sqlite3_column_text(stmt, 4);
           strncpy(temp.privateMsg.receiver, usrPtr, strlen(usrPtr) + 1);
-          temp.privateMsg.len = sqlite3_column_int(stmt, 7);
+
 
       }
         memcpy(temp.sig,(unsigned char*)sqlite3_column_text(stmt, 6),SIG_LENGTH);
@@ -181,7 +182,7 @@ static int execute_request(
                 }
 //                free(temp);
 
-                int res = insert_msg(state->db,(char*)msg->publicMsg.sender,"",(char*)msg->publicMsg.message,0,CMD_PUBLIC_MSG, (char*)msg->sig);
+                int res = insert_msg(state->db,(char*)msg->publicMsg.sender,"",(char*)msg->publicMsg.message,-1,CMD_PUBLIC_MSG, (char*)msg->sig);
                 if(res == SQLITE_DONE){
                     notify_workers(state);
                     return 0;

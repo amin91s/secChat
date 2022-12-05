@@ -138,7 +138,7 @@ int insert_msg(sqlite3 *db,char *sender,char *receiver, char *message, int encry
     //bind as text for testing. change it later
     //TODO: should I change this to blob, or use enc_len??
     //r+= sqlite3_bind_blob(stmt, 1,message, encrypted_msg_len, SQLITE_STATIC);
-    if((r= sqlite3_bind_text(stmt, 1, message, -1, SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
+    if((r= sqlite3_bind_text(stmt, 1, message, encrypted_msg_len, SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
     if((r= sqlite3_bind_text(stmt, 2, sender, -1, SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
     if((r= sqlite3_bind_text(stmt, 3, receiver, -1, SQLITE_STATIC)) != SQLITE_OK) goto cleanup;
     if((r= sqlite3_bind_int(stmt, 4, msg_type)) != SQLITE_OK) goto cleanup;

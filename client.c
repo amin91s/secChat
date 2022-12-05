@@ -423,15 +423,18 @@ static int execute_request(
           printf("could not decrypt private msg from %s.\nmsg added to decrypt list...\n",msg->privateMsg.sender);
           struct api_msg *temp = calloc(1, sizeof(struct api_msg));
           memcpy(temp, msg, sizeof(struct api_msg));
-          insert_node(state->decList,temp);
-          print_list(state->decList);
-          //send key request to the server
-          if(strcmp(msg->privateMsg.sender,state->ui.username) == 0){
-              request_key(state->api.fd,msg->privateMsg.sender,msg->privateMsg.receiver,state->ssl,state->evpKey);
-          } else {
-              request_key(state->api.fd,msg->privateMsg.receiver,msg->privateMsg.sender,state->ssl,state->evpKey);
+
+          //send key request to the server if not sent already
+          if(get_node(state->decList,msg->privateMsg.sender) == NULL){
+              if(strcmp(msg->privateMsg.sender,state->ui.username) == 0){
+                  request_key(state->api.fd,msg->privateMsg.sender,msg->privateMsg.receiver,state->ssl,state->evpKey);
+              } else {
+                  request_key(state->api.fd, msg->privateMsg.receiver, msg->privateMsg.sender, state->ssl, state->evpKey);
+              }
           }
 
+          insert_node(state->decList,temp);
+          print_list(state->decList);
           free(out);
           return 0;
       }
@@ -452,8 +455,9 @@ static int execute_request(
         printf("decrypted key: ");
         printHex(SYMM_KEY_LEN,plaintext);
         if(write_aes_key(msg->keyExchange.receiver,state->ui.password,msg->keyExchange.sender,plaintext, msg->keyExchange.iv) != -1){
-            printf("decrypted %d queued messages from user '%s'.\n",dec_msgs_from_user(state->decList,msg->keyExchange.sender,msg->keyExchange.receiver,state->ui.password),msg->keyExchange.sender);
+                printf("decrypted %d queued messages from user '%s'.\n",dec_msgs_from_user(state->decList,msg->keyExchange.receiver,msg->keyExchange.sender,state->ui.password),msg->keyExchange.receiver);
         }
+
           } else{
           printf("could not decrypt aes key\ndropping %d messages from '%s'\n",remove_msgs_from_user(state->decList,msg->keyExchange.sender),msg->keyExchange.sender);
           if(plaintext) free(plaintext);
