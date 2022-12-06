@@ -167,7 +167,7 @@ QNode* get_node(LinkedList *list, char *name){
     } else {
         QNode *temp = list->head;
         while(temp){
-            struct api_msg *msg = temp->data;//should i cast here??
+            struct api_msg *msg = temp->data;
             if((strncmp(name, msg->privateMsg.sender, MAX_USR_LENGTH) == 0) || (strncmp(name, msg->privateMsg.receiver, MAX_USR_LENGTH) == 0)) {
                 return temp;
             }
@@ -205,7 +205,7 @@ void print_list(LinkedList *list){
         while (temp){
             if(temp->data){
                 struct api_msg *msg = temp->data;
-                printf("private msg from: '%s'\n", msg->privateMsg.sender);
+                printf("private msg from: '%s' to '%s'\n", msg->privateMsg.sender,msg->privateMsg.receiver);
             }
             temp = temp->next;
         }
@@ -307,8 +307,9 @@ int dec_msgs_from_user(LinkedList *list, char *sender, char *receiver, char *pas
                 printf("%s %s: @%s %s", msg->time, msg->privateMsg.sender,msg->privateMsg.receiver, out);
                 free(out);
             } else{
-                free(out);
-                return -1;
+                //printf("skipping msg\n");
+                node = get_next_node(list,node,sender);
+                continue;
             }
             remove_node(list, node);
             ret++;
@@ -337,4 +338,66 @@ int valid_username(char *username, char *allowed){
     }
     return 1;
 
+}
+
+
+int send_queued_msgs_to_user(LinkedList *list, char *sender, char *receiver, char *password, int fd, SSL *ssl, EVP_PKEY *evpKey){
+    if(is_empty(list)) {
+        return 0;
+    } else {
+        int ret = 0;
+        QNode *node = get_node(list,receiver);
+        while (node){
+            struct api_msg *msg = node->data;
+            unsigned char *outbuff = calloc(1, MAX_MESSAGE_LENGTH+1);
+            int encLen;
+            int r = aes_enc(msg->privateMsg.sender,password,msg->privateMsg.receiver,(unsigned char*)msg->privateMsg.message,outbuff,&encLen);
+            if(r != 0) return -1;
+            memset(msg->privateMsg.message, 0, sizeof(msg->privateMsg.message));
+            memcpy(msg->privateMsg.message, outbuff, sizeof(msg->privateMsg.message));
+            msg->privateMsg.len = encLen;
+            free(outbuff);
+            sign(msg,evpKey);
+            if(api_send(fd,msg,ssl) !=0) return -1;
+
+            remove_node(list, node);
+            ret++;
+            node = get_node(list,receiver);
+        }
+        return ret;
+    }
+}
+
+
+QNode* get_next_node(LinkedList *list,QNode *node, char *name){
+    if(is_empty(list)) {
+        return NULL;
+    } else {
+        QNode *temp = node->next;
+        while(temp){
+            struct api_msg *msg = temp->data;//should i cast here??
+            if((strncmp(name, msg->privateMsg.sender, MAX_USR_LENGTH) == 0) || (strncmp(name, msg->privateMsg.receiver, MAX_USR_LENGTH) == 0)) {
+                return temp;
+            }
+            temp = temp->next;
+        }
+        return NULL;
+    }
+}
+
+
+int waiting_for_key(LinkedList *list, char *name){
+    if(is_empty(list)) {
+        return 0;
+    } else {
+        QNode *temp = list->head;
+        while(temp){
+            struct api_msg *msg = temp->data;
+            if((strncmp(name, msg->privateMsg.receiver, MAX_USR_LENGTH) == 0)){
+                return 1;
+            }
+            temp = temp->next;
+        }
+        return 0;
+    }
 }

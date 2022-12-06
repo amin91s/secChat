@@ -260,6 +260,37 @@ int generate_symm_key(char *usr, char *pass, char *receiver){
 }
 
 /**
+ *  * @return              0  on success , -1 on error
+ */
+int generate_symm_key_not_stored(char *usr, char *receiver, unsigned char *key, unsigned char *iv){
+    assert(usr);
+    assert(receiver);
+
+    if(!valid_username(usr,ALLOWED_USR_CHARS))
+        return -1;
+    if(!valid_username(receiver,ALLOWED_USR_CHARS))
+        return -1;
+
+    unsigned char tempKey[SYMM_KEY_LEN], tempIv[(IV_LEN)];
+    memset(key,0,SYMM_KEY_LEN);
+    memset(iv,0,IV_LEN);
+
+    if( RAND_bytes(tempKey,SYMM_KEY_LEN) != 1){
+        printf("could not generate Symmetric-key\n");
+        return -1;
+    }
+    if( RAND_bytes(tempIv,IV_LEN) != 1){
+        printf("could not generate IV\n");
+        return -1;
+    }
+    memcpy(key,tempKey,SYMM_KEY_LEN);
+    memcpy(iv,tempIv,IV_LEN);
+
+    return 0;
+
+}
+
+/**
  * @param       plaintext paintext
  * @param       ciphertext initialized buffer for cypher-text
  * @return      0  on success, 1 if key does not exist , -1 on error
@@ -407,7 +438,7 @@ int get_aes_key(char *usr, char *pass, char *receiver, unsigned char *key, unsig
         snprintf(path,256,"clientkeys/%s/%s-key.dat",usr,receiver);
         //check if key already exists
         if(!fileExists(path)){
-            printf("AES key does not exist\n");
+            //printf("AES key does not exist\n");
             return 1;
         }
         FILE *fp;
@@ -472,7 +503,7 @@ int write_aes_key(char *usr, char *pass, char *receiver, unsigned char *key, uns
         snprintf(path,256,"clientkeys/%s/%s-key.dat",usr,receiver);
         //check if key already exists
         if(fileExists(path)){
-            printf("key already exists\n");
+            //printf("key already exists\n");
             return 1;
         }
 
@@ -582,7 +613,7 @@ int rsa_enc2(X509 *usrcert, unsigned char *inbuf, unsigned char **outbuf){
 }
 
 
-int send_key(int fd, char *usr, char *pass, char *receiver ,SSL *ssl,  EVP_PKEY *evpKey){
+int send_key(int fd, char *usr, char *pass, char *receiver ,SSL *ssl,  EVP_PKEY *evpKey , unsigned char *tmpKey, unsigned char *tmpIv){
     assert(fd);
     assert(usr);
     assert(pass);
@@ -590,13 +621,18 @@ int send_key(int fd, char *usr, char *pass, char *receiver ,SSL *ssl,  EVP_PKEY 
     assert(ssl);
     assert(evpKey);
 
-    struct api_msg key_msg;
-    memset(&key_msg, 0, sizeof(struct api_msg));
-    key_msg.type = AES_KEY_INSERT;
     unsigned char key[SYMM_KEY_LEN], iv[(IV_LEN)];
     memset(key,0,SYMM_KEY_LEN);
     memset(iv,0,IV_LEN);
-    get_aes_key(usr,pass,receiver,(unsigned char*)key,(unsigned char*)iv);
+    if(tmpKey != NULL) {
+        memcpy(key,tmpKey,SYMM_KEY_LEN);
+        memcpy(iv,tmpIv,IV_LEN);
+    } else {
+        get_aes_key(usr,pass,receiver,(unsigned char*)key,(unsigned char*)iv);
+    }
+    struct api_msg key_msg;
+    memset(&key_msg, 0, sizeof(struct api_msg));
+    key_msg.type = AES_KEY_INSERT;
     memcpy(key_msg.keyExchange.sender,receiver,MAX_USR_LENGTH);
     memcpy(key_msg.keyExchange.receiver,usr,MAX_USR_LENGTH);
     memcpy(key_msg.keyExchange.iv, iv, IV_LEN);

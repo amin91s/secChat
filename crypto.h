@@ -30,8 +30,8 @@ int get_aes_key(char *usr, char *pass, char *receiver, unsigned char *key, unsig
 int rsa_enc(X509 *usrcert, unsigned char *inbuf, unsigned char **outbuf);
 int rsa_dec(EVP_PKEY *key, unsigned char *inbuf, unsigned char **outbuf);
 int rsa_enc2(X509 *usrcert, unsigned char *inbuf, unsigned char **outbuf);
-int send_key(int fd, char *usr, char *pass, char *receiver ,SSL *ssl,  EVP_PKEY *evpKey);
+int send_key(int fd, char *usr, char *pass, char *receiver ,SSL *ssl,  EVP_PKEY *evpKey, unsigned char *tmpKey, unsigned char *tmpIv);
 int request_key(int fd, char *usr, char *receiver ,SSL *ssl,  EVP_PKEY *evpKey);
 int write_aes_key(char *usr, char *pass, char *receiver, unsigned char *key, unsigned char *iv);
-
+int generate_symm_key_not_stored(char *usr, char *receiver, unsigned char *key, unsigned char *iv);
 #endif

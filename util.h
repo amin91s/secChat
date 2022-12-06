@@ -34,4 +34,7 @@ void test_list(LinkedList *list);
 int remove_msgs_from_user(LinkedList *list, char *name);
 int dec_msgs_from_user(LinkedList *list, char *sender, char *receiver, char *password);
 int valid_username(char *username, char *allowed);
+int send_queued_msgs_to_user(LinkedList *list, char *sender, char *receiver, char *password, int fd, SSL *ssl, EVP_PKEY *evpKey);
+QNode* get_next_node(LinkedList *list,QNode *node, char *name);
+int waiting_for_key(LinkedList *list, char *name);
 #endif /* defined(_UTIL_H_) */

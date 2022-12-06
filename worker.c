@@ -383,7 +383,7 @@ static int execute_request(
                 res = insert_key(state->db,(char*)msg->keyExchange.sender,(char*)msg->keyExchange.receiver,(char*)msg->keyExchange.key,msg->keyExchange.keyLen,(char*)msg->keyExchange.iv,(char*)msg->sig);
                 if(res == SQLITE_DONE){
                     //notify_workers(state);
-                    printf("aes key added successfully.\n");
+                    //printf("aes key added successfully.\n");
                     send_response(state->api.fd,KEY_INSERT_SUCCESSFUL,(char*)msg->keyExchange.receiver, state->ssl);
                     return 0;
                 } else if(res == SQLITE_CONSTRAINT){
@@ -391,7 +391,7 @@ static int execute_request(
                     send_response(state->api.fd,KEY_ALREADY_EXISTS,(char*)msg->keyExchange.receiver, state->ssl);
                     return 0;
                 } else
-                    return send_response(state->api.fd,KEY_NOT_FOUND,(char*)msg->keyExchange.receiver, state->ssl);
+                    return send_response(state->api.fd,CMD_NOT_AVAILABLE,NULL, state->ssl);
 
             } else {
                 return send_response(state->api.fd,CMD_NOT_AVAILABLE,NULL, state->ssl);

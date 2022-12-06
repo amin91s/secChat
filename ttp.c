@@ -209,7 +209,7 @@ int get_cert(X509 *usrcert, char *usr){
     snprintf(buf,256,"clientkeys/%s/%s-ca-cert.pem",usr,usr);
     fclose(path);
     if(!fileExists(buf)){
-        printf("user does not exist\n");
+        //printf("user does not exist\n");
         X509_free(cacert);
         return 1;
     }

@@ -28,6 +28,7 @@ struct client_state
   SSL *ssl;
   EVP_PKEY *evpKey;
   LinkedList *decList;
+  LinkedList *encList;
 };
 
 /**
@@ -153,28 +154,43 @@ static int client_process_command(struct client_state *state)
         int encLen;
         int r = aes_enc(msg.privateMsg.sender,state->ui.password,msg.privateMsg.receiver,(unsigned char*)msg.privateMsg.message,outbuff,&encLen);
         if(r == 1){
+            //key does not exist
             if(receiver_exists(msg.privateMsg.receiver)){
-                // generate AES key
-                printf("generating AES key for user %s\n",msg.privateMsg.receiver);
-                r = generate_symm_key(state->username,state->ui.password,msg.privateMsg.receiver);
-                if(r == 0){
-                    if(send_key(state->api.fd,msg.privateMsg.sender,state->ui.password,msg.privateMsg.receiver,state->ssl,state->evpKey) != 0){
-                        free(outbuff);
+                if(strcmp(msg.privateMsg.receiver,state->username) == 0){
+                    // generate AES key (when we are messaging ourself)
+                    printf("generating AES key for ourself\n");
+                    r = generate_symm_key(state->username,state->ui.password,msg.privateMsg.receiver);
+                    if(r == 0){
+                        if(send_key(state->api.fd,msg.privateMsg.sender,state->ui.password,msg.privateMsg.receiver,state->ssl,state->evpKey,NULL,NULL) != 0){
+                            return 0;
+                        }
+                        aes_enc(msg.privateMsg.sender,state->ui.password,msg.privateMsg.receiver,(unsigned char*)msg.privateMsg.message,outbuff,&encLen);
+                    } else{
+                        //could not generate aes key (error is already printed)
                         return 0;
                     }
-                    aes_enc(msg.privateMsg.sender,state->ui.password,msg.privateMsg.receiver,(unsigned char*)msg.privateMsg.message,outbuff,&encLen);
                 } else{
-                    //could not generate aes key (error is already printed)
+                    //add msg to encryption list
+                    struct api_msg *temp = calloc(1, sizeof(struct api_msg));
+                    memcpy(temp, &msg, sizeof(struct api_msg));
+                    //send key request to the server if not sent already
+                    if(get_node(state->encList,temp->privateMsg.receiver) == NULL){
+                        request_key(state->api.fd,temp->privateMsg.sender,temp->privateMsg.receiver,state->ssl,state->evpKey);
+                    } else printf("already sent a key request for user '%s'. adding it to the list.\n",msg.privateMsg.receiver);
+
+                    insert_node(state->encList,temp);
+                    //print_list(state->encList);
                     free(outbuff);
                     return 0;
                 }
-            } else{
+
+            } else {
+                //receiver does not exist
                 printf("error: user not found\n");
                 free(outbuff);
                 return 0;
-
             }
-        }
+        } else if(r != 0) return 0;
 
         memset(&msg.privateMsg.message, 0, sizeof(msg.privateMsg.message));
         memcpy(&msg.privateMsg.message, outbuff, sizeof(msg.privateMsg.message));
@@ -182,7 +198,6 @@ static int client_process_command(struct client_state *state)
         free(outbuff);
 
         sign(&msg,state->evpKey);
-        verify_sig(&msg,state->username);
         return (api_send(state->api.fd,&msg,state->ssl));
 
 
@@ -393,12 +408,12 @@ static int execute_request(
         free(out);
         return 0;
       } else {
-          printf("could not decrypt private msg from %s.\nmsg added to decrypt list...\n",msg->privateMsg.sender);
+          //printf("could not decrypt private msg from %s.\nmsg added to decrypt list...\n",msg->privateMsg.sender);
           struct api_msg *temp = calloc(1, sizeof(struct api_msg));
           memcpy(temp, msg, sizeof(struct api_msg));
 
           //send key request to the server if not sent already
-          if(get_node(state->decList,msg->privateMsg.sender) == NULL){
+          if(!waiting_for_key(state->decList,msg->privateMsg.receiver)){
               if(strcmp(msg->privateMsg.sender,state->ui.username) == 0){
                   request_key(state->api.fd,msg->privateMsg.sender,msg->privateMsg.receiver,state->ssl,state->evpKey);
               } else {
@@ -429,9 +444,16 @@ static int execute_request(
           return 0;
       }
       unsigned char *plaintext = NULL;
+      //decrypt the received key
       if(rsa_dec(state->evpKey,(unsigned char*)msg->keyExchange.key,&plaintext) == 0){
+          //store key/iv in user's key directory
         if(write_aes_key(msg->keyExchange.receiver,state->ui.password,msg->keyExchange.sender,plaintext, msg->keyExchange.iv) != -1){
-                printf("decrypted %d queued messages from user '%s'.\n",dec_msgs_from_user(state->decList,msg->keyExchange.receiver,msg->keyExchange.sender,state->ui.password),msg->keyExchange.receiver);
+            //decrypt queued private messages from this sender
+           // printf("decrypted %d queued messages from user '%s'.\n",dec_msgs_from_user(state->decList,msg->keyExchange.receiver,msg->keyExchange.sender,state->ui.password),msg->keyExchange.receiver);
+          //  printf("encrypted and sent %d queued messages to user '%s'.\n", send_queued_msgs_to_user(state->encList,msg->keyExchange.sender,msg->keyExchange.receiver,state->ui.password,state->api.fd,state->ssl, state->evpKey),msg->keyExchange.receiver);
+            dec_msgs_from_user(state->decList,msg->keyExchange.receiver,msg->keyExchange.sender,state->ui.password);
+            send_queued_msgs_to_user(state->encList,msg->keyExchange.sender,msg->keyExchange.receiver,state->ui.password,state->api.fd,state->ssl, state->evpKey);
+
         }
 
           } else{
@@ -500,12 +522,33 @@ static int execute_request(
                   printf("error: AES key for user '%s' already exists\n",msg->serverResponse.message);
               return 0;
           case KEY_NOT_FOUND:
-              if(check_length((char*)msg->serverResponse.message,MIN_USR_LENGTH,MAX_USR_LENGTH))
-                  printf("error: AES key for user '%s' was not found in the database\n",msg->serverResponse.message);
+              if(check_length((char*)msg->serverResponse.message,MIN_USR_LENGTH,MAX_USR_LENGTH)){
+                  if((strcmp(msg->serverResponse.message,state->username) != 0) ||((strcmp(msg->serverResponse.message,state->username) == 0) && (waiting_for_key(state->decList,state->username)) )) {
+                      printf("error: AES key for user '%s' was not found in the database\n",
+                             msg->serverResponse.message);
+                      printf("generating AES key for user '%s'\n", msg->serverResponse.message);
+                      // generate AES key
+                      unsigned char key[SYMM_KEY_LEN], iv[(IV_LEN)];
+                      memset(key, 0, SYMM_KEY_LEN);
+                      memset(iv, 0, IV_LEN);
+                      int r = generate_symm_key_not_stored(state->username, msg->serverResponse.message,
+                                                           (unsigned char *) key, (unsigned char *) iv);
+                      if (r == 0) {
+                          if (send_key(state->api.fd, state->username, state->ui.password, msg->serverResponse.message,
+                                       state->ssl, state->evpKey, (unsigned char *) key, (unsigned char *) iv) != 0) {
+                              printf("sent aes-key-insert req to server for user '%s'\n", msg->serverResponse.message);
+                              return 0;
+                          }
+                      }
+              }
+              }
               return 0;
           case KEY_INSERT_SUCCESSFUL:
-              if(check_length((char*)msg->serverResponse.message,MIN_USR_LENGTH,MAX_USR_LENGTH))
-                  printf("AES key for user '%s' added to the database\n",msg->serverResponse.message);
+              if(check_length((char*)msg->serverResponse.message,MIN_USR_LENGTH,MAX_USR_LENGTH)){
+                  //printf("AES key for user '%s' added to the database\n",msg->serverResponse.message);
+                  request_key(state->api.fd,state->username,msg->serverResponse.message,state->ssl,state->evpKey);
+              }
+
               return 0;
           case USER_DOES_NOT_MATCH:
               if(check_length((char*)msg->serverResponse.message,MIN_USR_LENGTH,MAX_USR_LENGTH))
@@ -641,7 +684,7 @@ static int client_state_init(struct client_state *state)
       return 1;
   }
   state->decList = init_list();
-
+  state->encList = init_list();
   //already set to 0 by memset?
   state->logged = 0;
 
@@ -664,6 +707,9 @@ static void client_state_free(struct client_state *state){
     ui_state_free(&state->ui);
     list_free(state->decList);
     if(state->decList) free(state->decList);
+    list_free(state->encList);
+    if(state->encList) free(state->encList);
+
     memset(state, 0, sizeof(*state));
 }
 
