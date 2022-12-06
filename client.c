@@ -278,7 +278,7 @@ static int client_process_command(struct client_state *state)
                 return 0;
             }
 
-            if(get_credential(temp,&state->ui) == 1){
+            if((get_credential(temp,&state->ui) == 1) && valid_username(state->ui.username,ALLOWED_USR_CHARS)){
                 struct api_msg msg;
                 memset(&msg, 0, sizeof(msg));
                 msg.type = CMD_REGISTER;
@@ -370,8 +370,6 @@ static int execute_request(
 {
   if (msg->type == CMD_PUBLIC_MSG)
   {
-    //todo: changed const struct to struct. figure out later
-
     if(verify_sig(msg,msg->publicMsg.sender) != 0){
         printf("signature for received message is incorrect. dropping...\n");
         return 0;
@@ -524,9 +522,11 @@ static int execute_request(
               return 0;
       }
   } else if (msg->type == CMD_USERS){
-      //todo: add more sanitization checks
       for(int i=0;i<msg->users.num_users;i++){
-          if(!(check_length((char*)msg->users.users[i],MIN_USR_LENGTH,MAX_USR_LENGTH)))return -1;
+          if(!(valid_username((char*)msg->users.users[i],ALLOWED_USR_CHARS))){
+              printf("received invalid username from server for users command.\n");
+              return 0;
+          }
           printf("%s\n",msg->users.users[i]);
       }
   }
