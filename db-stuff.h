@@ -54,7 +54,6 @@ int get_credentials(sqlite3 *db, char *username,unsigned char *hash,unsigned cha
 
     if(r == SQLITE_ROW){
         //user exists
-        //todo: change SALT_LENGTH for hash and memcpy
         //strncpy((char*)salt,(char*)sqlite3_column_text(stmt, 1),SALT_LENGTH);
         //strncpy((char*)hash,(char*)sqlite3_column_text(stmt, 2),SALT_LENGTH);
         memcpy(salt,(char*)sqlite3_column_text(stmt, 1),SALT_LENGTH);

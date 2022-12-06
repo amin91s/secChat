@@ -359,6 +359,7 @@ int dec_msgs_from_user(LinkedList *list, char *sender, char *receiver, char *pas
                 free(out);
             } else{
                 //printf("skipping msg\n");
+                free(out);
                 node = get_next_node(list,node,sender);
                 continue;
             }
@@ -403,7 +404,10 @@ int send_queued_msgs_to_user(LinkedList *list, char *sender, char *receiver, cha
             unsigned char *outbuff = calloc(1, MAX_MESSAGE_LENGTH+1);
             int encLen;
             int r = aes_enc(msg->privateMsg.sender,password,msg->privateMsg.receiver,(unsigned char*)msg->privateMsg.message,outbuff,&encLen);
-            if(r != 0) return -1;
+            if(r != 0) {
+                free(outbuff);
+                return -1;
+            }
             memset(msg->privateMsg.message, 0, sizeof(msg->privateMsg.message));
             memcpy(msg->privateMsg.message, outbuff, sizeof(msg->privateMsg.message));
             msg->privateMsg.len = encLen;

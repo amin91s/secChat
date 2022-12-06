@@ -245,6 +245,7 @@ static int client_process_command(struct client_state *state)
                   return 0;
               }
               memcpy(msg.auth.password,hash,SHA256_HASH_SIZE);
+              free(hash);
               return (api_send(state->api.fd,&msg,state->ssl));
 
               return 0;
