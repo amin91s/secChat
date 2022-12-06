@@ -11,6 +11,7 @@
 #define MAX_USR_LENGTH 15
 #define MAX_PASS_LENGTH 15
 #define MIN_USR_LENGTH 2
+#define ALLOWED_USR_CHARS "_@"
 #define MIN_PASS_LENGTH 2
 #define MAX_HASH_LENGTH 64
 #define SALT_LENGTH 32
@@ -44,7 +45,10 @@ enum response{
     ALREADY_LOGGED_IN,
     KEY_ALREADY_EXISTS,
     KEY_NOT_FOUND,
-    KEY_INSERT_SUCCESSFUL
+    KEY_INSERT_SUCCESSFUL,
+    INVALID_MSG_LEN,
+    BAD_SIGNATURE,
+    INVALID_CHR_IN_USR
 
 };
 
@@ -66,7 +70,7 @@ struct private_msg{
 //used for both login and register
 struct auth{
     char username[MAX_USR_LENGTH+1];
-    char password[MAX_PASS_LENGTH+1];
+    char password[SALT_LENGTH];
 
 };
 struct users{

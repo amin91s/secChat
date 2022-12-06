@@ -14,7 +14,7 @@
 #include <fcntl.h>
 #include "crypto.h"
 
-
+// waiting part is (modified) from this doc: https://www.ibm.com/docs/en/zos/2.2.0?topic=functions-exec
 int exec(char *arg[]){
     pid_t pid;
     int status;
@@ -68,11 +68,9 @@ int gen_rsa(char *usr, char *passwd){
     assert(usr);
     assert(passwd);
 
-    //todo: implement validatePath(usrname);
-    if(!check_length(usr,MIN_USR_LENGTH,MAX_USR_LENGTH)){
-        printf("incorrect username length\n");
+    if(!valid_username(usr,ALLOWED_USR_CHARS))
         return -1;
-    }
+
     if(!check_length(passwd, MIN_PASS_LENGTH,MAX_PASS_LENGTH)){
         printf("incorrect password length\n");
         return -1;
@@ -150,15 +148,15 @@ int get_priv_key(EVP_PKEY *key, char *usr, char *pass){
     assert(pass);
     assert(usr);
 
-    if(!check_length(usr,MIN_USR_LENGTH,MAX_USR_LENGTH)){
-        printf("incorrect username length\n");
+    if(!valid_username(usr,ALLOWED_USR_CHARS))
         return -1;
-    }
+
     if(!check_length(pass, MIN_PASS_LENGTH,MAX_PASS_LENGTH)){
         printf("incorrect password length\n");
         return -1;
     }
-    ///todo: implement validatePath(usrname); + goto cleanup
+
+    ///todo: implement goto cleanup
 
     //check if password is correct
     if(validate_clientkey_access(usr,pass) == 0){
@@ -174,6 +172,8 @@ int get_priv_key(EVP_PKEY *key, char *usr, char *pass){
         if(!rsa){
             printf("could not read rsa from pem\n");
             //todo: goto cleanup
+            fclose(keyfile);
+            return -1;
         }
         fclose(keyfile);
         EVP_PKEY_assign_RSA(key, rsa);
@@ -190,11 +190,11 @@ int get_cert(X509 *usrcert, char *usr){
     assert(usr);
     EVP_PKEY *capubkey;
     X509 *cacert;
-    if(!check_length(usr,MIN_USR_LENGTH,MAX_USR_LENGTH)){
-        printf("incorrect username length\n");
+
+    if(!valid_username(usr,ALLOWED_USR_CHARS))
         return -1;
-    }
-    ///todo: implement validatePath(usrname); + goto cleanup
+
+    ///todo: implement goto cleanup
 
     FILE *path = fopen("ttpkeys/ca-cert.pem", "r");
     if(path == NULL){

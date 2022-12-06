@@ -33,4 +33,5 @@ void list_free(LinkedList *list);
 void test_list(LinkedList *list);
 int remove_msgs_from_user(LinkedList *list, char *name);
 int dec_msgs_from_user(LinkedList *list, char *sender, char *receiver, char *password);
+int valid_username(char *username, char *allowed);
 #endif /* defined(_UTIL_H_) */

@@ -25,7 +25,6 @@ struct worker_state
   int server_fd; /* server <-> worker bidirectional notification channel */
   int server_eof;
   sqlite3 *db;
-  //TODO: move these to api_state?
   char lastReadTime[20];   //keeps track of which messages need ot be broadcasted to client
   char username[MAX_USR_LENGTH+1];
   int logged;
@@ -55,9 +54,8 @@ static int handle_s2w_notification(struct worker_state *state)
   }
 
   // create sql query to select all unread msgs
-  //char sql[] = "SELECT * FROM msg WHERE (msg_type=2) OR (msg_type=1 AND (receiver = ?1 OR sender= ?2))  group by id having id > ?3";
 
-    char sql[] = "SELECT * FROM msg WHERE (msg_type=2) OR (msg_type=1 AND (receiver = ?1 OR sender= ?2))  group by id having timestamp > ?3";
+  char sql[] = "SELECT * FROM msg WHERE (msg_type=2) OR (msg_type=1 AND (receiver = ?1 OR sender= ?2))  group by id having timestamp > ?3";
 
   if (sqlite3_prepare_v2(state->db, sql, -1, &stmt, NULL) == SQLITE_OK)
   {
@@ -100,8 +98,6 @@ static int handle_s2w_notification(struct worker_state *state)
       //send the message to client
       //res = write(state->api.fd, &temp, sizeof(temp));
       //res = send(state->api.fd,&temp,sizeof (temp) ,0);
-      //TODO: fix sending (maybe use server respond (add msg type to respond struct)).
-
         res = api_send(state->api.fd,&temp,state->ssl);
       if (res < 0 && errno != EPIPE)
       {
@@ -164,23 +160,19 @@ static int execute_request(
             if(state->logged){
                 //check message length
                 if(!(check_length((char*)msg->publicMsg.message,2,MAX_MESSAGE_LENGTH))){
-                    printf("TODO: send message length error\n");
+                    return send_response(state->api.fd,INVALID_MSG_LEN,NULL, state->ssl);
                     return 0;
                 }
                 //check sender's username matches
                 if(strncmp(state->username,msg->publicMsg.sender,MAX_USR_LENGTH)!=0){
-                    printf("TODO: send username does not match\n");
+                    return send_response(state->api.fd,USER_DOES_NOT_MATCH,NULL, state->ssl);
                     return 0;
                 }
-                //TODO: add other checks???
-                //TODO: perform crypto stuff (check signature,...) here
-//                struct api_msg *temp = calloc(1,sizeof(*msg));
-//                memcpy(temp,msg,sizeof(*msg));
+
                 if(verify_sig(msg,msg->publicMsg.sender) != 0){
-                    //TODO: send signature error response
+                    return send_response(state->api.fd,BAD_SIGNATURE,NULL, state->ssl);
                     return 0;
                 }
-//                free(temp);
 
                 int res = insert_msg(state->db,(char*)msg->publicMsg.sender,"",(char*)msg->publicMsg.message,-1,CMD_PUBLIC_MSG, (char*)msg->sig);
                 if(res == SQLITE_DONE){
@@ -200,10 +192,10 @@ static int execute_request(
             if(state->logged){
 
                 if(!(check_length((char*)msg->privateMsg.message,2,MAX_MESSAGE_LENGTH))){
-                    //printf("TODO: send message length error\n");
+                    return send_response(state->api.fd,INVALID_MSG_LEN,NULL, state->ssl);
                     return 0;
                 }
-                if(!(check_length((char*)msg->privateMsg.receiver,MIN_USR_LENGTH,MAX_USR_LENGTH)) ){
+                if(!(valid_username((char*)msg->privateMsg.receiver,ALLOWED_USR_CHARS)) ){
                     return send_response(state->api.fd,USER_NOT_FOUND,NULL, state->ssl);
                 }
                 //check sender's username matches
@@ -213,7 +205,7 @@ static int execute_request(
                 }
 
                 if(verify_sig(msg,msg->privateMsg.sender) != 0){
-                    //TODO: send signature error response
+                    send_response(state->api.fd,BAD_SIGNATURE,(char*)msg->keyExchange.sender, state->ssl);
                     return 0;
                 }
 
@@ -235,7 +227,10 @@ static int execute_request(
                 if(!(check_length((char*)msg->auth.username,MIN_USR_LENGTH,MAX_USR_LENGTH))){
                     return send_response(state->api.fd,INVALID_USR_LEN,NULL, state->ssl);
                 }
-                if(!(check_length((char*)msg->auth.password,MIN_PASS_LENGTH,MAX_PASS_LENGTH))){
+                if(!(valid_username((char*)msg->auth.username,ALLOWED_USR_CHARS))){
+                    return send_response(state->api.fd,INVALID_CHR_IN_USR,NULL, state->ssl);
+                }
+                if(!(check_length((char*)msg->auth.password,MIN_PASS_LENGTH,SALT_LENGTH))){
                     return send_response(state->api.fd,INVALID_PSW_LEN,NULL, state->ssl);
 
                 }
@@ -243,7 +238,6 @@ static int execute_request(
                 //the username. just check the returned value of the query
 
                 //call functions to generate salt and hash the password
-                //TODO: should it be SALT_LENGTH+1?????
                 unsigned char *salt = calloc(SALT_LENGTH,sizeof (unsigned char ));
                 if(generate_salt(salt) != 0){
                     printf("error: could not generate salt\n");
@@ -251,6 +245,7 @@ static int execute_request(
                     send_response(state->api.fd,CMD_NOT_AVAILABLE,NULL, state->ssl);
                     return 0;
                 }
+
                 unsigned char *hash = calloc(SALT_LENGTH /*EVP_MD_size(EVP_sha256())*/ , sizeof(unsigned char));
                 if(hash_salt_password(salt,hash,(char*)msg->auth.password) != 0){
                     printf("error: could not hash the password\n");
@@ -275,7 +270,6 @@ static int execute_request(
                     return 0;
                 }
                 else if(res == SQLITE_DONE){
-                    //printf("TODO: send successful message to client\n");
                     strncpy(state->username,msg->auth.username,MAX_USR_LENGTH);
                     state->logged = 1;
                     set_user_status(state->db,state->username,1);
@@ -291,10 +285,11 @@ static int execute_request(
         case CMD_LOGIN:
             if(!state->logged) {
                 //check username and password meet the requirements
-                if(!(check_length((char*)msg->auth.username,MIN_USR_LENGTH,MAX_USR_LENGTH)) || !(check_length((char*)msg->auth.password,MIN_PASS_LENGTH,MAX_PASS_LENGTH))){
-                    //printf("TODO: send length error to user\n");
+                if(!(valid_username((char*)msg->auth.username,ALLOWED_USR_CHARS)) || !(check_length((char*)msg->auth.password,MIN_PASS_LENGTH,SALT_LENGTH))){
                     send_response(state->api.fd,INVALID_USR_LEN,NULL, state->ssl);
+                    return 0;
                 }
+
                 //get username,salt,hash from db if user exists
                 unsigned char salt[SALT_LENGTH];
                 unsigned char hash[SALT_LENGTH];
@@ -310,7 +305,7 @@ static int execute_request(
                         return 0;
                     }
 
-                    //TODO: check if password is correct here
+                    //check if password is correct
                     if(memcmp(temp,hash,SALT_LENGTH) !=0) {
                         send_response(state->api.fd,INVALID_CREDENTIALS,NULL, state->ssl);
                         free(temp);
@@ -318,7 +313,6 @@ static int execute_request(
                     }
                     free(temp);
                     //if login was successful:
-
                     strncpy(state->username,msg->auth.username,MAX_USR_LENGTH);
                     state->logged = 1;
                     if(set_user_status(state->db,(char *)msg->auth.username,1) == SQLITE_DONE){
@@ -331,7 +325,6 @@ static int execute_request(
                     }
                 } else if (res == 0){
                     //user does not exist
-                    //printf("TODO: send invalid credentials message\n");
                     send_response(state->api.fd,INVALID_CREDENTIALS,NULL, state->ssl);
                     return 0;
                 } else{
@@ -349,7 +342,7 @@ static int execute_request(
                 response.type=CMD_USERS;
                 int res = get_users(state->db, &response);
                 if (res == 0) {
-                    //TODO: fix api_send
+
                    //size_t r = write(state->api.fd, &response, sizeof(struct api_msg));
                    ssize_t r = api_send(state->api.fd,&response,state->ssl);
                    if (r < 0 && errno != EPIPE) {
@@ -365,7 +358,7 @@ static int execute_request(
         case AES_KEY_INSERT:
             if(state->logged){
                 if(!(check_length((char*)msg->keyExchange.key,2,MAX_MESSAGE_LENGTH))){
-                    //printf("TODO: send message length error\n");
+                    send_response(state->api.fd,INVALID_MSG_LEN,NULL, state->ssl);
                     return 0;
                 }
                 if(!(check_length((char*)msg->keyExchange.receiver,MIN_USR_LENGTH,MAX_USR_LENGTH)) ){
@@ -383,7 +376,7 @@ static int execute_request(
                     res = verify_sig(msg,msg->keyExchange.receiver);
                 }
                 if(res != 0){
-                    printf("TODO: send signature error response - AES_KEY_insert\n");
+                    return send_response(state->api.fd,BAD_SIGNATURE,NULL, state->ssl);
                     return 0;
                 }
 
@@ -394,7 +387,7 @@ static int execute_request(
                     send_response(state->api.fd,KEY_INSERT_SUCCESSFUL,(char*)msg->keyExchange.receiver, state->ssl);
                     return 0;
                 } else if(res == SQLITE_CONSTRAINT){
-                    printf("constraint\n");
+                    //printf("key-constraint\n");
                     send_response(state->api.fd,KEY_ALREADY_EXISTS,(char*)msg->keyExchange.receiver, state->ssl);
                     return 0;
                 } else
@@ -416,16 +409,14 @@ static int execute_request(
                 }
 
                 if(verify_sig(msg,msg->keyExchange.sender) != 0){
-                    printf("TODO: send signature error response - AES_KEY_REQUEST\n");
+                    return send_response(state->api.fd,BAD_SIGNATURE,NULL, state->ssl);
                     return 0;
                 }
 
                 char key[RSA_KEY_SIZE],iv[IV_LEN],sig[SIG_LENGTH];
                 memset(key,0,RSA_KEY_SIZE);
                 memset(iv,0,IV_LEN);
-                //todo: send the signature???? + why not sender,receiver ????
                 int res = get_key(state->db,msg->keyExchange.sender,msg->keyExchange.receiver,(char*)key,(char*)iv, (char*)sig);
-
                 if(res == 0){
                     send_response(state->api.fd,KEY_NOT_FOUND,(char*)msg->keyExchange.receiver, state->ssl);
                     return 0;

@@ -121,6 +121,10 @@ int sign(struct api_msg* msg, EVP_PKEY *key){
 
 int verify_sig(struct api_msg* msg, char *usr){
     assert(msg);
+
+    if(!valid_username(usr,ALLOWED_USR_CHARS))
+        return -1;
+
     unsigned char temp[SIG_LENGTH];
     memset(temp,0,SIG_LENGTH);
     memcpy(temp,msg->sig,SIG_LENGTH);
@@ -134,7 +138,7 @@ int verify_sig(struct api_msg* msg, char *usr){
     get_cert(usrcert,usr);
     if(!usrcert){
         printf("could not load user's certificate for %s\n",usr);
-        X509_free(usrcert);
+        if(usrcert) X509_free(usrcert);
         return -1;
     }
 
@@ -188,19 +192,18 @@ int generate_symm_key(char *usr, char *pass, char *receiver){
     assert(usr);
     assert(receiver);
 
-    if(!check_length(usr,MIN_USR_LENGTH,MAX_USR_LENGTH)){
-        printf("incorrect username length\n");
+    if(!valid_username(usr,ALLOWED_USR_CHARS))
         return -1;
-    }
+    if(!valid_username(receiver,ALLOWED_USR_CHARS))
+        return -1;
     if(!check_length(pass, MIN_PASS_LENGTH,MAX_PASS_LENGTH)){
         printf("incorrect password length\n");
         return -1;
     }
-    if(!check_length(receiver,MIN_USR_LENGTH,MAX_USR_LENGTH)){
-        printf("incorrect receiver length\n");
-        return -1;
-    }
-    ///todo: implement validatePath(usrname) && validatepath(receiver); and move above lines there + goto cleanup
+
+    ///todo: implement goto cleanup
+
+
 
     if(validate_clientkey_access(usr,pass) == 0){
         unsigned char key[SYMM_KEY_LEN], iv[(IV_LEN)];
@@ -245,7 +248,7 @@ int generate_symm_key(char *usr, char *pass, char *receiver){
         }
         if(fwrite(iv,1,IV_LEN,fp) <= 0){
             printf("could not write IV to file\n");
-            //todo: remove key if needed.
+            //todo: remove key if added.
             fclose(fp);
             return -1;
         }
@@ -266,16 +269,11 @@ int aes_enc(char *sender , char *pass, char *receiver, unsigned char *plaintext,
     assert(receiver);
     assert(plaintext);
 
-    if(!check_length(sender,MIN_USR_LENGTH,MAX_USR_LENGTH)){
-        printf("incorrect username length\n");
+    if(!valid_username(sender,ALLOWED_USR_CHARS))
         return -1;
-    }
+    if(!valid_username(receiver,ALLOWED_USR_CHARS))
+        return -1;
 
-    if(!check_length(receiver,MIN_USR_LENGTH,MAX_USR_LENGTH)){
-        printf("incorrect receiver length\n");
-        return -1;
-    }
-    //todo: sanitize username
     if((strlen((char*)plaintext) + EVP_CIPHER_block_size(CIPHER_TYPE) + 1) > MAX_MESSAGE_LENGTH){
         printf("plaintext length > max_msg_len\n");
         return -1;
@@ -330,15 +328,13 @@ int aes_dec(char *receiver , char *pass, char *sender, unsigned char *ciphertext
     assert(receiver);
     assert(ciphertext);
     assert(enc_len);
-    if(!check_length(sender,MIN_USR_LENGTH,MAX_USR_LENGTH)){
-        printf("incorrect username length\n");
-        return -1;
-    }
 
-    if(!check_length(receiver,MIN_USR_LENGTH,MAX_USR_LENGTH)){
-        printf("incorrect receiver length\n");
+    if(!valid_username(sender,ALLOWED_USR_CHARS))
         return -1;
-    }
+
+    if(!valid_username(receiver,ALLOWED_USR_CHARS))
+        return -1;
+
     if(*enc_len > MAX_MESSAGE_LENGTH){
         printf("ciphertext length > max_msg_len\n");
         return -1;
@@ -394,6 +390,13 @@ int get_aes_key(char *usr, char *pass, char *receiver, unsigned char *key, unsig
     assert(usr);
     assert(pass);
     assert(receiver);
+
+    if(!valid_username(usr,ALLOWED_USR_CHARS))
+        return -1;
+
+    if(!valid_username(receiver,ALLOWED_USR_CHARS))
+        return -1;
+
     if(!check_length(pass, MIN_PASS_LENGTH,MAX_PASS_LENGTH)){
         printf("incorrect password length\n");
         return -1;
@@ -449,19 +452,19 @@ int write_aes_key(char *usr, char *pass, char *receiver, unsigned char *key, uns
     assert(receiver);
     assert(key);
     assert(iv);
-    if(!check_length(usr,MIN_USR_LENGTH,MAX_USR_LENGTH)){
-        printf("incorrect username length\n");
+
+    if(!valid_username(usr,ALLOWED_USR_CHARS))
         return -1;
-    }
+
+    if(!valid_username(receiver,ALLOWED_USR_CHARS))
+        return -1;
+
     if(!check_length(pass, MIN_PASS_LENGTH,MAX_PASS_LENGTH)){
         printf("incorrect password length\n");
         return -1;
     }
-    if(!check_length(receiver,MIN_USR_LENGTH,MAX_USR_LENGTH)){
-        printf("incorrect receiver length\n");
-        return -1;
-    }
-    ///todo: implement validatePath(usrname) && validatepath(receiver); and move above lines there + goto cleanup
+
+    ///todo: implement goto cleanup
 
     if(validate_clientkey_access(usr,pass) == 0){
         char path[256];
@@ -545,7 +548,7 @@ int rsa_dec(EVP_PKEY *key, unsigned char *inbuf, unsigned char **outbuf){
     }
 
 }
-
+//not used.
 int rsa_enc2(X509 *usrcert, unsigned char *inbuf, unsigned char **outbuf){
     assert(usrcert);
     assert(inbuf);
@@ -580,6 +583,13 @@ int rsa_enc2(X509 *usrcert, unsigned char *inbuf, unsigned char **outbuf){
 
 
 int send_key(int fd, char *usr, char *pass, char *receiver ,SSL *ssl,  EVP_PKEY *evpKey){
+    assert(fd);
+    assert(usr);
+    assert(pass);
+    assert(receiver);
+    assert(ssl);
+    assert(evpKey);
+
     struct api_msg key_msg;
     memset(&key_msg, 0, sizeof(struct api_msg));
     key_msg.type = AES_KEY_INSERT;
@@ -636,6 +646,12 @@ int request_key(int fd, char *usr, char *receiver ,SSL *ssl,  EVP_PKEY *evpKey){
     assert(receiver);
     assert(evpKey);
     assert(ssl);
+
+    if(!valid_username(usr,ALLOWED_USR_CHARS))
+        return -1;
+
+    if(!valid_username(receiver,ALLOWED_USR_CHARS))
+        return -1;
 
     struct api_msg key_msg;
     memset(&key_msg, 0, sizeof(struct api_msg));

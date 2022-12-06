@@ -179,8 +179,6 @@ static int client_process_command(struct client_state *state)
         memset(&msg.privateMsg.message, 0, sizeof(msg.privateMsg.message));
         memcpy(&msg.privateMsg.message, outbuff, sizeof(msg.privateMsg.message));
         msg.privateMsg.len = encLen;
-        //TODO: change after implementing key exchange
-        //printf("enclen = %d\n",encLen);
         free(outbuff);
 
         sign(&msg,state->evpKey);
@@ -210,7 +208,7 @@ static int client_process_command(struct client_state *state)
 
           if(state->logged == 1){
               //already logged in
-              printf("%s","error: command not currently available\n");
+              printf("error: command not currently available\n");
               return 0;
             }
 
@@ -220,20 +218,18 @@ static int client_process_command(struct client_state *state)
               return 0;
           }
           state->ui.cmd = CMD_LOGIN;
-          if(get_credential(temp,&state->ui) == 1){
+          if((get_credential(temp,&state->ui) == 1) && valid_username(state->ui.username,ALLOWED_USR_CHARS)){
               struct api_msg msg;
               memset(&msg, 0, sizeof(msg));
               msg.type = CMD_LOGIN;
-
-
-              //TODO: do the crypto stuff here
-              //TODO: is it safe/necessary to store password after logging in?? (ask)
-
-              //printf("username: %s\n",state->ui.username);
-              //printf("password: %s\n",state->ui.password);
               strncpy(msg.auth.username,state->ui.username,MAX_USR_LENGTH);
-              strncpy(msg.auth.password,state->ui.password,MAX_PASS_LENGTH);
-
+              unsigned char *hash = calloc(SHA256_HASH_SIZE , sizeof(unsigned char));
+              if(hash_password(hash,state->ui.password) != 0){
+                  free(hash);
+                  printf("could not hash user's password.\n");
+                  return 0;
+              }
+              memcpy(msg.auth.password,hash,SHA256_HASH_SIZE);
               return (api_send(state->api.fd,&msg,state->ssl));
 
               return 0;
@@ -260,7 +256,7 @@ static int client_process_command(struct client_state *state)
           }
           else
           {
-            printf("%s", "error: invalid command format\n");
+            printf("error: invalid command format\n");
             return 0;
           }
         }
@@ -271,7 +267,7 @@ static int client_process_command(struct client_state *state)
 
             if(state->logged == 1){
                 //already logged in
-                printf("%s","error: command not currently available\n");
+                printf("error: command not currently available\n");
                 return 0;
             }
 
@@ -283,14 +279,18 @@ static int client_process_command(struct client_state *state)
             }
 
             if(get_credential(temp,&state->ui) == 1){
-                //TODO: encryption stuff
-
                 struct api_msg msg;
                 memset(&msg, 0, sizeof(msg));
                 msg.type = CMD_REGISTER;
                 strncpy(msg.auth.username,state->ui.username,MAX_USR_LENGTH);
-                strncpy(msg.auth.password,state->ui.password,MAX_PASS_LENGTH);
-
+                unsigned char *hash = calloc(SHA256_HASH_SIZE , sizeof(unsigned char));
+                if(hash_password(hash,state->ui.password) != 0){
+                    free(hash);
+                    printf("could not hash user's password.\n");
+                    return 0;
+                }
+                memcpy(msg.auth.password,hash,SHA256_HASH_SIZE);
+                free(hash);
                 return (api_send(state->api.fd,&msg,state->ssl));
 
             }
@@ -311,7 +311,7 @@ static int client_process_command(struct client_state *state)
           {
 
               if(state->logged == 0){
-                printf("%s","error: command not currently available\n");
+                printf("error: command not currently available\n");
                 return 0;
               } else{
                   struct api_msg msg;
@@ -323,14 +323,14 @@ static int client_process_command(struct client_state *state)
           }
           else
           {
-            printf("%s", "error: invalid command format\n");
+            printf("error: invalid command format\n");
             return 0;
           }
         }
-        //TODO: is this vulnerable????
+
       unknown:
       default:
-        printf("error: unknown command %s",temp);
+        fprintf(stdout,"error: unknown command %s",temp);
         return 0;
       }
     } else {
@@ -348,32 +348,11 @@ static int client_process_command(struct client_state *state)
         memcpy(msg.publicMsg.message, temp, strlen(temp) + 1);
 
         sign(&msg,state->evpKey);
-/*
-        //unsigned char *outbuff2 = calloc(1, MAX_MESSAGE_LENGTH);
-        //aes_dec(state->username,state->ui.password,state->username,outbuff,outbuff2,&encLen);
-
-        X509 *usrcert = X509_new();
-        get_cert(usrcert,(char*)"amin");
-
-        unsigned char *out = NULL;
-        rsa_enc2(usrcert,(unsigned char*)msg.publicMsg.message,&out);
-//        rsa_enc(usrcert, (unsigned char*)msg.publicMsg.message, &out);
-//
-        unsigned char *decText = NULL;
-        rsa_dec(state->evpKey,out,&decText);
-        printf("decrypted msg: %s.",decText);
-        if(out) free(out);
-        free(decText);
-        X509_free(usrcert);
-
-*/
-
 
         return (api_send(state->api.fd,&msg,state->ssl));
     }
   }
 
-    // ./client localhost 8081 < <(python3 -c "print('hiiiiiiii')")
   if(feof(stdin))
       state->eof = 1;
 
@@ -533,6 +512,15 @@ static int execute_request(
           case USER_DOES_NOT_MATCH:
               if(check_length((char*)msg->serverResponse.message,MIN_USR_LENGTH,MAX_USR_LENGTH))
                   printf("user '%s' does not match the current user\n",msg->serverResponse.message);
+              return 0;
+          case INVALID_MSG_LEN:
+              printf("error: invalid message length\n");
+              return 0;
+          case BAD_SIGNATURE:
+              printf("error: message sent to server had bad signature\n");
+              return 0;
+          case INVALID_CHR_IN_USR:
+              printf("error: username contains illegal characters\n");
               return 0;
       }
   } else if (msg->type == CMD_USERS){

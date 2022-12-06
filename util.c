@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include<sys/stat.h>
 #include "util.h"
+#include <ctype.h>
 
 int lookup_host_ipv4(const char *hostname, struct in_addr *addr) {
   struct hostent *host;
@@ -315,4 +316,25 @@ int dec_msgs_from_user(LinkedList *list, char *sender, char *receiver, char *pas
         }
         return ret;
     }
+}
+//returns 1 if valid, 0 otherwise
+int valid_username(char *username, char *allowed){
+    assert(username);
+    assert(allowed);
+    if(!check_length(username,MIN_USR_LENGTH,MAX_USR_LENGTH))
+        return 0;
+
+    //char *ret = strpbrk(username,notAllowed);
+    if(!isalnum(username[0])){
+        printf("error: username must start with a character or a number\n");
+        return 0;
+    }
+    for(int i = 0; i < strlen(username); i++){
+        if(!isalnum(username[i]) && !strchr(allowed,username[i])){
+            printf("error: invalid character '%c' in username\n",username[i]);
+            return 0;
+        }
+    }
+    return 1;
+
 }
