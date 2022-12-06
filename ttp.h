@@ -14,4 +14,5 @@ int gen_rsa(char *usr, char *passwd);
 
 int get_priv_key(EVP_PKEY *key, char *usr, char *pass);
 int get_cert(X509 *usrcert, char *usr);
+int sign_csr(char *usr, char *passwd);
 #endif //FRAMEWORK_TTP_H

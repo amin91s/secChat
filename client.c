@@ -470,12 +470,17 @@ static int execute_request(
               strncpy(state->username,msg->serverResponse.message,MAX_USR_LENGTH);
               state->logged=1;
               printf("registration succeeded\n");
-              if(gen_rsa(state->ui.username,state->ui.password) != -1){
-                  printf("rsa keys generated\n");
-                  if(get_priv_key(state->evpKey,state->ui.username,state->ui.password) != 0){
-                      printf("could not get private key\n");
-                      return 1;
+              //if(gen_rsa(state->ui.username,state->ui.password) != -1){
+              if(gen_csr(state->ui.username,state->ui.password) != -1){
+                  printf("sending csr to ttp\n");
+                  if(sign_csr(state->ui.username,state->ui.password) == 0){
+                      printf("certificate generated\n");
+                      if(get_priv_key(state->evpKey,state->ui.username,state->ui.password) != 0){
+                          printf("could not get our private key from key folder\n");
+                          return 1;
+                      }
                   }
+
               }
               else{
                   printf("could not generate rsa keys\n");
@@ -519,23 +524,20 @@ static int execute_request(
               return 0;
           case KEY_ALREADY_EXISTS:
               if(check_length((char*)msg->serverResponse.message,MIN_USR_LENGTH,MAX_USR_LENGTH))
-                  printf("error: AES key for user '%s' already exists\n",msg->serverResponse.message);
+                  printf("server response: AES key for user '%s' already exists\n",msg->serverResponse.message);
               return 0;
           case KEY_NOT_FOUND:
               if(check_length((char*)msg->serverResponse.message,MIN_USR_LENGTH,MAX_USR_LENGTH)){
                   if((strcmp(msg->serverResponse.message,state->username) != 0) ||((strcmp(msg->serverResponse.message,state->username) == 0) && (waiting_for_key(state->decList,state->username)) )) {
-                      printf("error: AES key for user '%s' was not found in the database\n",
-                             msg->serverResponse.message);
+                      //printf("server response:: AES key for user '%s' was not found in the database\n",msg->serverResponse.message);
                       printf("generating AES key for user '%s'\n", msg->serverResponse.message);
                       // generate AES key
                       unsigned char key[SYMM_KEY_LEN], iv[(IV_LEN)];
                       memset(key, 0, SYMM_KEY_LEN);
                       memset(iv, 0, IV_LEN);
-                      int r = generate_symm_key_not_stored(state->username, msg->serverResponse.message,
-                                                           (unsigned char *) key, (unsigned char *) iv);
+                      int r = generate_symm_key_not_stored(state->username, msg->serverResponse.message, (unsigned char *) key, (unsigned char *) iv);
                       if (r == 0) {
-                          if (send_key(state->api.fd, state->username, state->ui.password, msg->serverResponse.message,
-                                       state->ssl, state->evpKey, (unsigned char *) key, (unsigned char *) iv) != 0) {
+                          if (send_key(state->api.fd, state->username, state->ui.password, msg->serverResponse.message, state->ssl, state->evpKey, (unsigned char *) key, (unsigned char *) iv) != 0) {
                               printf("sent aes-key-insert req to server for user '%s'\n", msg->serverResponse.message);
                               return 0;
                           }

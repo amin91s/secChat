@@ -34,4 +34,5 @@ int send_key(int fd, char *usr, char *pass, char *receiver ,SSL *ssl,  EVP_PKEY 
 int request_key(int fd, char *usr, char *receiver ,SSL *ssl,  EVP_PKEY *evpKey);
 int write_aes_key(char *usr, char *pass, char *receiver, unsigned char *key, unsigned char *iv);
 int generate_symm_key_not_stored(char *usr, char *receiver, unsigned char *key, unsigned char *iv);
+int gen_csr(char *usr, char *passwd);
 #endif

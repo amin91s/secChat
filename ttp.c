@@ -8,61 +8,47 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <sys/wait.h>
 #include <string.h>
 #include "cmd.h"
 #include <fcntl.h>
 #include "crypto.h"
 
-// waiting part is (modified) from this doc: https://www.ibm.com/docs/en/zos/2.2.0?topic=functions-exec
-int exec(char *arg[]){
-    pid_t pid;
-    int status;
-    if ((pid = fork()) < 0)
-        perror("fork() error");
-    else if (pid == 0) {
-        //child pid
 
-        int fd = open("/dev/null", O_WRONLY);
-        if(fd < 0){
-            printf("could not open dev/null");
-            return -1;
-        }
-        dup2(fd, 1);
-        dup2(fd, 2);
-        close(fd);
 
-        execv(arg[0], arg);
-        printf("error in execv\n");
-        exit(1);
-    } else{
-        //printf("parent has forked child with pid of %d\n", (int) pid);
-        if((pid = wait(&status)) == -1){
-            printf("wait() error\n");
-            return -1;
-        }
-        else{
-            if(WIFEXITED(status)){
-                //printf("child exited with status of %d\n", WEXITSTATUS(status));
-                return 0;
-            }
-            else if(WIFSIGNALED(status)){
-                printf("child was terminated by signal %d\n",WTERMSIG(status));
-                return -1;
-            }
-            else if(WIFSTOPPED(status)){
-                printf("child was stopped by signal %d\n", WSTOPSIG(status));
-                return -1;
-            }
-            else{
-                printf("something went horribly wrong.\n");
-                return -1;
-            }
 
-        }
+int sign_csr(char *usr, char *passwd){
+    assert(usr);
+    assert(passwd);
+
+    if(!valid_username(usr,ALLOWED_USR_CHARS))
+        return -1;
+
+    if(!check_length(passwd, MIN_PASS_LENGTH,MAX_PASS_LENGTH)){
+        printf("incorrect password length\n");
+        return -1;
     }
-    return 0;
+    char temp2[256];
+    memset(temp2, 0, 256);
+    snprintf(temp2, 256, "clientkeys/%s/%s-csr.pem", usr, usr);
+    if(!fileExists(temp2)){
+        printf("csr does not exist\n");
+        return -1;
+    }
+    if(validate_clientkey_access(usr,passwd) == 0){
+        //sign csr
+        char temp[256];
+        memset(temp,0,256);
+        snprintf(temp,256,"clientkeys/%s/%s-ca-cert.pem",usr,usr);
+        if(exec((char *[]){"/usr/bin/openssl", "x509", "-req", "-CA",  "ttpkeys/ca-cert.pem", "-CAkey" ,"ttpkeys/ca-key.pem" ,"-CAcreateserial", "-in", temp2, "-out", temp,NULL}) != 0){
+            printf("could not generate user cert.\n");
+            return -1;
+        }
+        return 0;
+    }
+    return -1;
 }
+
+
 
 int gen_rsa(char *usr, char *passwd){
     assert(usr);
@@ -80,6 +66,10 @@ int gen_rsa(char *usr, char *passwd){
     memset(temp, 0, 256);
     snprintf(temp, 256, "clientkeys/%s", usr);
 
+    if(fileExists(temp)){
+        printf("directory already exists\n");
+        return -1;
+    }
     //make directory
     if(exec((char *[]){"/bin/mkdir","-p",temp, NULL}) != 0){
         printf("could not make usr key directory\n");
@@ -93,7 +83,7 @@ int gen_rsa(char *usr, char *passwd){
         printf("could not generate priv key\n");
         return -1;
     }
-
+    //generate csr
     char temp2[256];
     memset(temp2, 0, 256);
     snprintf(temp2, 256, "clientkeys/%s/%s-csr.pem", usr, usr);
@@ -106,7 +96,7 @@ int gen_rsa(char *usr, char *passwd){
         printf("could not generate user cert.\n");
         return -1;
     }
-
+    //sign csr
     memset(temp,0,256);
     snprintf(temp,256,"clientkeys/%s/%s-ca-cert.pem",usr,usr);
 

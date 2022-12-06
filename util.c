@@ -56,6 +56,57 @@ int parse_port(const char *str, uint16_t *port_p) {
   return 0;
 }
 
+// waiting part is (modified) from this doc: https://www.ibm.com/docs/en/zos/2.2.0?topic=functions-exec
+int exec(char *arg[]){
+    pid_t pid;
+    int status;
+    if ((pid = fork()) < 0)
+        perror("fork() error");
+    else if (pid == 0) {
+        //child pid
+
+        int fd = open("/dev/null", O_WRONLY);
+        if(fd < 0){
+            printf("could not open dev/null");
+            return -1;
+        }
+        dup2(fd, 1);
+        dup2(fd, 2);
+        close(fd);
+
+        execv(arg[0], arg);
+        printf("error in execv\n");
+        exit(1);
+    } else{
+        //printf("parent has forked child with pid of %d\n", (int) pid);
+        if((pid = wait(&status)) == -1){
+            printf("wait() error\n");
+            return -1;
+        }
+        else{
+            if(WIFEXITED(status)){
+                //printf("child exited with status of %d\n", WEXITSTATUS(status));
+                return 0;
+            }
+            else if(WIFSIGNALED(status)){
+                printf("child was terminated by signal %d\n",WTERMSIG(status));
+                return -1;
+            }
+            else if(WIFSTOPPED(status)){
+                printf("child was stopped by signal %d\n", WSTOPSIG(status));
+                return -1;
+            }
+            else{
+                printf("something went horribly wrong.\n");
+                return -1;
+            }
+
+        }
+    }
+    return 0;
+}
+
+
 int check_length(char *text, int minLen, int maxLen){
     size_t len = strlen(text);
    return (len >= minLen && len <= maxLen );

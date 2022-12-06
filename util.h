@@ -3,6 +3,8 @@
 
 #include <netinet/in.h>
 #include <openssl/evp.h>
+#include <sys/wait.h>
+#include <fcntl.h>
 #include "crypto.h"
 int lookup_host_ipv4(const char *hostname, struct in_addr *addr);
 int max(int x, int y);
@@ -37,4 +39,5 @@ int valid_username(char *username, char *allowed);
 int send_queued_msgs_to_user(LinkedList *list, char *sender, char *receiver, char *password, int fd, SSL *ssl, EVP_PKEY *evpKey);
 QNode* get_next_node(LinkedList *list,QNode *node, char *name);
 int waiting_for_key(LinkedList *list, char *name);
+int exec(char *arg[]);
 #endif /* defined(_UTIL_H_) */
