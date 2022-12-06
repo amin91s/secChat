@@ -1,43 +1,148 @@
-# SecChat Project
-
 ## Setup
-To run the code stored in this repository, first navigate to the appropriate repository directory. Then, run the following code with the TCP port number of your choosing.
+To run the code, first navigate to the appropriate directory. Then, run the following code with the TCP port number of your choosing.
 ```
 make all
-./server 8080
-./client localhost 8080
+./server port
+./client localhost port
 ```
-## Code Overview
-### Chat Basics 
-- Data Flow \
-  The general flow of data starts when a user input a command into the command line. This is processed in the ``client.c`` file, passed to the ``worker.c`` to communicate with the server and returned to the appropriate clients via their workers. All of the users/clients have corresponding workers that handle communication to and from the server on behalf of the client.
-- Messages \
-  There are two types of messages, public and private, stored in a singular database by the server. A client can send a public message by typing directly into the command line after connecting to the server via the setup procedure described above. This message will be parsed and stored as a public message with the generic sender name as "client." The client can only send a message of maximum length 512. If the message exceeds this length, it will not be accepted and the program will exit and flush the input. More on error handling is described below. A client can also sender a private message to another registered user of the SecChat application by typing "@username" before the message with the specified username of the receipient. The receipient of the message is not required to be logged on but is required to be a registered user. Additionally, the size restriction of 512 characters including the null terminator is similarly enforced.
-- Error Handling \
-  This chat server also employs various helper functions in the ``ui.c`` file to check, clean, and parse user input from the command line. These functions include `void flush_stdin()` to clear input when exiting, `char *remove_leading_space()` and `void remove_trailing_space()` to trim messages, and `int new_line_count()` to ensure that one command is being inputted and processes at a time.
-- Usage Information \
-  The application also supports usage statements all commands that require parameters. For example, if a user were to try and start the server without specifying a port number, the application would print `usage: server port` to stdout to indicate to the user that a port is required after the server command.
-### Framework and Structures
-The main structures used to store and pass data within this application are in the ``api.h``, ``cmd.h``, ``ui.h``, and ``server.c`` files. Additionally, the ``cmd.h`` file holds the enum for the various command types. Each of the structures along with their usage is described below:
-- *``struct api_msg``*:
-  This is the main structure that holds a message. The key field within this struct is ``enum cmd_type type`` which is further explain below. However, in summary, this field describes which of the 6 different message types the structure is representing. Besides the type field, ``api_msg`` also holds user and message buffers of a predefined max length, a message length, and a char[] holding the timestamp of the message. The timestamp is acquired from the builtin ``time.h``.
-- *`struct api_state`*:
-  This struct is used to pass information between clients and workers. It only contains a int fd and thus does not need memory allocated.
-- *`cmd_type`*: This enum holds the 6 different messages possible in the chat server.
-  - ``CMD_EXIT``:
-  - ``CMD_LOGIN``
-  - ``CMD_PRIVATE_MSG``
-  - ``CMD_PUBLIC_MSG``
-  - ``CMD_REGISTER``
-  - ``CMD_USERS``
-- *`struct ui_state`*: This structure stores the command arguments received from the user interface. It contains a type field, message field, and timestamp variable.
-- *`struct server_child_state`*: This struture holds a file descriptor to the child's specific worker and an integer to indicate wheter a notication is pending.
-- *`struct server_state`*: This structure holds a socket file descriptor, an array of ``sever_state_children`` capped at the max size of 16, a count of current children and a reference to the sqlite database.
-- *`struct worker_state`*: This structure holds all the information to communicate between the client and server and contains references to the last read and last inserted message. These fields keep track of which messages need to be broadcasted when a user logs in.
 
-### Database
-The database has a sqlite table to store all messages and another sqlite table to store all users. Both tables reside in the *chat.db* file. This database is initialized in the `server.c` file in the `static int server_state_init()` function. \
+Note: The server and ttp's certificates and keys are created via the makefile on
+the make all command.
 
-For the messages table, a reference to the table, called *db*, is stored in the ``server_state`` mentioned above. The table has the following columns: id, timestamp, msg text, msg_len, sender, and msg_type. Insertion and reads of the database occur in the ``worker.c`` file. The `static int handle_s2w_notification()` function prepares and binds the SELECT query on the database with a filter for an id greater than the last read id. The `static int execute_request()` function inserts messages into the database using the `sqlite3_prepare_v2(()` function to run the INSERT INTO query. Private messages follow the same structure and only differ in the message type field.
+## Description of commands:
+- register:
+    - /register username password
+- login: 
+    - /login username password
+- users: /users
+    - this command is used to get a list of online users. user must be logged in to use this command.
 
- 
+- private message:
+    - after logging in, users can send private messages to other users by typing @ followed by receiver's username.
+- exit: 
+    - to exit the program, users can type /exit or hit ctrl+D
+
+
+  <br /> 
+## Overview of message types exchanged:
+
+```
+struct api_msg
+{
+  enum cmd_type type;
+  char time[20];
+  unsigned char sig[256];
+  union {
+      struct public_msg publicMsg;
+      struct private_msg privateMsg;
+      struct auth auth;
+      struct users users;
+      struct server_response serverResponse;
+      struct key_exchange keyExchange;
+  };
+
+};
+```
+```
+enum cmd_type
+{
+    CMD_LOGIN = 0,
+    CMD_PRIVATE_MSG = 1,
+    CMD_PUBLIC_MSG = 2,
+    AES_KEY_INSERT= 3,
+    AES_KEY_REQUEST= 4,
+    CMD_REGISTER= 5,
+    CMD_USERS=6,
+    SERVER_RESPONSE=7
+};
+```
+<br /> 
+
+### possible messages sent to users from server:
+```
+enum response{
+    REG_SUCCESSFUL,
+    LOGIN_SUCCESSFUL,
+    INVALID_CREDENTIALS,
+    CMD_NOT_AVAILABLE,
+    USER_NOT_FOUND,
+    USER_DOES_NOT_MATCH,
+    USERNAME_EXISTS,
+    INVALID_CMD_FORMAT,
+    INVALID_USR_LEN,
+    INVALID_PSW_LEN,
+    ALREADY_LOGGED_IN,
+    KEY_ALREADY_EXISTS,
+    KEY_NOT_FOUND,
+    KEY_INSERT_SUCCESSFUL,
+    INVALID_MSG_LEN,
+    BAD_SIGNATURE,
+    INVALID_CHR_IN_USR
+
+};
+```
+<br /> 
+
+## Database:
+<br /> 
+
+The database contains 3 tables:
+
+1. **users**
+    - *columns:* username, salt, hash, status
+    - there is a *unique* constraint on the username
+2. **keys**
+    - *columns:* user1, user2, key, iv, signature
+    - there is a *unique* constraint on the pair of user1,user2
+3. **messages**
+    - *columns:* id, timestamp, message, sender, receiver, type, signature, length
+
+## example Control flows:
+<br />
+
+### Successful registration (client side):
+![alt text](sregc.jpg "successful registeration on client side")
+<br />
+
+### Successful registration (server side):
+<br />
+
+- Generate random salt (generate_salt func. In crypto.c)
+-	Hash the password (hash_salt_password function in crypto.c)
+o	This function uses SLOW_HASH_ROUNDS macro (defined in cmd.h) 
+-	Store salt/hash in the db (register_user func.)
+-	Send REG_SUCCESSFUL response to user
+<br />
+
+### sending private message:
+<br />
+
+![alt text](privmsg.jpg "sending priv msg")
+<br />
+
+## Cryptography:
+
+* Clients establish an SSL connection to the server and use CA's
+certificate to validate the server's identity. SSL provides confidentiality and
+integrity of the connection to the server.
+
+* after successful registeration, clients create a CSR and ask ttp to create the certificate. additionally, they store the hash of the password in their clientkey's direcory. this will be used to authorize access to the client's keys.
+
+* all functions that read/write files validate the paths (provided usernames). 
+calls to ssl command are done using fork/execv.
+
+* when receiving certificate of other users, clients check if the certificate is propperly signed by the CA, and if the username (that we used to request this cert) matches the common name of the certificate.
+
+* for login/register commands, the password is hashed on the client side before sending it to the server.
+    * on the server side, the password is hashed with a random salt (for 1000 rounds) and are stored in the databse.This prevents attacker from obtaining passwords (cleartext) if the server is compromised.
+
+* AES keys generated by the clients are encrypted with receivers public key (RSA) and stored in the database.
+    * additionally, we encrypt the AES key with our own public key and store that in the db as well. this allows clients to recover AES keys if deleted, or use the program in another machine(only private key is needed).
+the key_exchange message (used to send the keys) is signed and the signature is stored in the db. signature is verified on the server before storing keys, as well as on the client side when requesting the keys from the server.
+
+* Both public and private messages are signed by the sender using the
+private key. Server verifies the signature before storing the message in
+the database and notifying other workers. Clients verify the signature as well. This provides
+integrity and non-repudiation even if the server is compromised.
+    * Additionally, private messages are encrypted using AES symmetric key
+which prevents server from reading private messages.
