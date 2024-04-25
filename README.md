@@ -1,4 +1,4 @@
-## VU secure programming assignment.
+## VU secure programming assignment
 project grade: 9.5/10
 
 ## Setup
