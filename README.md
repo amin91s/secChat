@@ -1,3 +1,6 @@
+## VU secure programming assignment.
+project grade: 9.5/10
+
 ## Setup
 To run the code, first navigate to the appropriate directory. Then, run the following code with the TCP port number of your choosing.
 ```
